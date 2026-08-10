@@ -55,41 +55,6 @@ def inicializar_bd():
     conn.commit()
     conn.close()
 
-def agregar_producto_con_variante(nombre, categoria, costo, venta, talle, color, stock):
-    """Agrega un producto y su variante inicial a la base de datos."""
-    conn = obtener_conexion()
-    cursor = conn.cursor()
-
-    # 1. Buscar si el producto base ya existe
-    cursor.execute("SELECT id FROM productos WHERE nombre = ? AND categoria = ?", (nombre, categoria))
-    prod = cursor.fetchone()
-
-    if prod:
-        producto_id = prod[0]
-    else:
-        cursor.execute('''
-            INSERT INTO productos (nombre, categoria, precio_costo, precio_venta)
-            VALUES (?, ?, ?, ?)
-        ''', (nombre, categoria, costo, venta))
-        producto_id = cursor.lastrowid
-
-    # 2. Insertar la variante
-    # Intentamos primero con la columna 'stock', y si la tabla fue creada como 'cantidad', usamos 'cantidad'
-    try:
-        cursor.execute('''
-            INSERT INTO variantes (producto_id, talle, color, stock)
-            VALUES (?, ?, ?, ?)
-        ''', (producto_id, talle, color, stock))
-    except sqlite3.OperationalError:
-        cursor.execute('''
-            INSERT INTO variantes (producto_id, talle, color, cantidad)
-            VALUES (?, ?, ?, ?)
-        ''', (producto_id, talle, color, stock))
-
-    conn.commit()
-    conn.close()
-    return f"PROD-{producto_id}"
-
 def obtener_variantes_stock(columna_orden="producto", direccion="ASC"):
     """
     Retorna la lista de todas las variantes registradas unidas con sus productos base.
@@ -321,3 +286,285 @@ def obtener_reporte_ventas(periodo="hoy"):
     }
 
     return metricas, ventas
+
+
+
+def crear_tablas_caja():
+    conn = obtener_conexion()
+    cursor = conn.cursor()
+    
+    # Tabla para las sesiones de caja (Apertura y Cierre)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS cajas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha_apertura DATETIME DEFAULT CURRENT_TIMESTAMP,
+            fecha_cierre DATETIME,
+            monto_inicial REAL NOT NULL,
+            monto_final_teorico REAL,
+            monto_final_real REAL,
+            diferencia REAL,
+            estado TEXT NOT NULL DEFAULT 'ABIERTA',
+            observaciones TEXT
+        )
+    ''')
+
+    # Tabla para movimientos manuales de caja (ingresos/egresos varios)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS movimientos_caja (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            caja_id INTEGER NOT NULL,
+            tipo TEXT NOT NULL, -- 'INGRESO' o 'EGRESO'
+            monto REAL NOT NULL,
+            concepto TEXT NOT NULL,
+            fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (caja_id) REFERENCES cajas(id)
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+
+
+def obtener_caja_abierta():
+    """Devuelve la caja que actualmente está abierta, o None si no hay ninguna."""
+    crear_tablas_caja()
+    conn = obtener_conexion()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, fecha_apertura, monto_inicial FROM cajas WHERE estado = 'ABIERTA' ORDER BY id DESC LIMIT 1")
+    caja = cursor.fetchone()
+    conn.close()
+    return caja  # (id, fecha_apertura, monto_inicial)
+
+
+def abrir_caja(monto_inicial):
+    caja_actual = obtener_caja_abierta()
+    if caja_actual:
+        raise ValueError("Ya existe una caja abierta. Debe cerrarla antes de abrir una nueva.")
+
+    conn = obtener_conexion()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO cajas (monto_inicial, estado) VALUES (?, 'ABIERTA')", (monto_inicial,))
+    caja_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return caja_id
+
+
+def registrar_movimiento_caja(caja_id, tipo, monto, concepto):
+    conn = obtener_conexion()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO movimientos_caja (caja_id, tipo, monto, concepto)
+        VALUES (?, ?, ?, ?)
+    ''', (caja_id, tipo, monto, concepto))
+    conn.commit()
+    conn.close()
+
+
+def obtener_resumen_caja_actual():
+    caja = obtener_caja_abierta()
+    if not caja:
+        return None
+
+    caja_id, fecha_apertura, monto_inicial = caja
+
+    conn = obtener_conexion()
+    cursor = conn.cursor()
+
+    # Ventas por método de pago desde la apertura
+    cursor.execute('''
+        SELECT metodo_pago, SUM(total) 
+        FROM ventas 
+        WHERE fecha >= ? 
+        GROUP BY metodo_pago
+    ''', (fecha_apertura,))
+    ventas_pago = dict(cursor.fetchall())
+
+    ventas_efectivo = ventas_pago.get('Efectivo', 0.0)
+    ventas_digitales = sum(monto for mp, monto in ventas_pago.items() if mp != 'Efectivo')
+
+    # Movimientos de caja (Ingresos / Egresos)
+    cursor.execute('''
+        SELECT tipo, SUM(monto) 
+        FROM movimientos_caja 
+        WHERE caja_id = ? 
+        GROUP BY tipo
+    ''', (caja_id,))
+    movs = dict(cursor.fetchall())
+
+    ingresos_extra = movs.get('INGRESO', 0.0)
+    egresos_extra = movs.get('EGRESO', 0.0)
+
+    # Cálculo del total esperado en EFECTIVO en la caja física
+    efectivo_esperado = monto_inicial + ventas_efectivo + ingresos_extra - egresos_extra
+    total_recaudado_general = ventas_efectivo + ventas_digitales
+
+    conn.close()
+
+    return {
+        "caja_id": caja_id,
+        "fecha_apertura": fecha_apertura,
+        "monto_inicial": monto_inicial,
+        "ventas_efectivo": ventas_efectivo,
+        "ventas_digitales": ventas_digitales,
+        "ingresos_extra": ingresos_extra,
+        "egresos_extra": egresos_extra,
+        "efectivo_esperado": efectivo_esperado,
+        "total_recaudado": total_recaudado_general
+    }
+
+
+def cerrar_caja(caja_id, monto_real_efectivo, observaciones=""):
+    resumen = obtener_resumen_caja_actual()
+    if not resumen or resumen["caja_id"] != caja_id:
+        raise ValueError("Error al identificar la caja activa.")
+
+    efectivo_esperado = resumen["efectivo_esperado"]
+    diferencia = monto_real_efectivo - efectivo_esperado
+
+    conn = obtener_conexion()
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE cajas
+        SET fecha_cierre = CURRENT_TIMESTAMP,
+            monto_final_teorico = ?,
+            monto_final_real = ?,
+            diferencia = ?,
+            estado = 'CERRADA',
+            observaciones = ?
+        WHERE id = ?
+    ''', (efectivo_esperado, monto_real_efectivo, diferencia, observaciones, caja_id))
+
+    conn.commit()
+    conn.close()
+    return diferencia
+def obtener_variantes_stock(columna_orden="producto", direccion_orden="ASC", filtro_texto=""):
+    """
+    Obtiene las variantes registradas con opción de filtrado por texto y ordenamiento.
+    """
+    conn = obtener_conexion()
+    cursor = conn.cursor()
+
+    mapeo_columnas = {
+        "producto": "p.nombre",
+        "talle": "v.talle",
+        "color": "v.color",
+        "precio": "p.precio_venta",
+        "stock": "v.stock"
+    }
+    col_sql = mapeo_columnas.get(columna_orden, "p.nombre")
+    dir_sql = "DESC" if direccion_orden.upper() == "DESC" else "ASC"
+
+    query = f'''
+        SELECT 
+            v.id, 
+            p.nombre, 
+            p.categoria, 
+            v.talle, 
+            v.color, 
+            p.precio_costo,
+            p.precio_venta, 
+            v.stock,
+            p.id as producto_id
+        FROM variantes v
+        JOIN productos p ON v.producto_id = p.id
+        WHERE p.nombre LIKE ? OR p.categoria LIKE ? OR v.talle LIKE ? OR v.color LIKE ?
+        ORDER BY {col_sql} {dir_sql}
+    '''
+    
+    patron = f"%{filtro_texto}%"
+    cursor.execute(query, (patron, patron, patron, patron))
+    registros = cursor.fetchall()
+    conn.close()
+    return registros
+
+
+def actualizar_variante_y_precios(var_id, talle, color, stock, costo, venta):
+    """
+    Actualiza el talle, color y stock de la variante, así como los precios en el producto padre.
+    """
+    conn = obtener_conexion()
+    cursor = conn.cursor()
+
+    # Obtener el producto_id asociado a la variante
+    cursor.execute("SELECT producto_id FROM variantes WHERE id = ?", (var_id,))
+    res = cursor.fetchone()
+    if not res:
+        conn.close()
+        raise ValueError("Variante no encontrada.")
+
+    producto_id = res[0]
+
+    # Actualizar la variante
+    cursor.execute('''
+        UPDATE variantes
+        SET talle = ?, color = ?, stock = ?
+        WHERE id = ?
+    ''', (talle, color, stock, var_id))
+
+    # Actualizar los precios del producto
+    cursor.execute('''
+        UPDATE productos
+        SET precio_costo = ?, precio_venta = ?
+        WHERE id = ?
+    ''', (costo, venta, producto_id))
+
+    conn.commit()
+    conn.close()
+
+
+def agregar_producto_con_matriz_variantes(nombre, categoria, costo, venta, lista_talles, lista_colores, stock_inicial):
+    """
+    Crea un producto e inserta automáticamente todas las combinaciones posibles de talles y colores.
+    """
+    conn = obtener_conexion()
+    cursor = conn.cursor()
+
+    sku_base = f"{nombre[:3].upper()}-{categoria[:3].upper()}"
+
+    cursor.execute('''
+        INSERT INTO productos (nombre, categoria, precio_costo, precio_venta)
+        VALUES (?, ?, ?, ?)
+    ''', (nombre, categoria, costo, venta))
+
+    producto_id = cursor.lastrowid
+
+    # Insertar la combinación cartesiana de Talles x Colores
+    combinaciones = 0
+    for talle in lista_talles:
+        for color in lista_colores:
+            if talle.strip() and color.strip():
+                cursor.execute('''
+                    INSERT INTO variantes (producto_id, talle, color, stock)
+                    VALUES (?, ?, ?, ?)
+                ''', (producto_id, talle.strip(), color.strip(), stock_inicial))
+                combinaciones += 1
+
+    conn.commit()
+    conn.close()
+    return combinaciones
+
+def agregar_producto_con_variante(nombre, categoria, costo, venta, talle, color, stock):
+    """
+    Crea un producto indivdual y su correspondiente variante de talle/color.
+    """
+    conn = obtener_conexion()
+    cursor = conn.cursor()
+
+    # Insertar el producto base
+    cursor.execute('''
+        INSERT INTO productos (nombre, categoria, precio_costo, precio_venta)
+        VALUES (?, ?, ?, ?)
+    ''', (nombre, categoria, costo, venta))
+
+    producto_id = cursor.lastrowid
+
+    # Insertar la variante
+    cursor.execute('''
+        INSERT INTO variantes (producto_id, talle, color, stock)
+        VALUES (?, ?, ?, ?)
+    ''', (producto_id, talle, color, stock))
+
+    conn.commit()
+    conn.close()
+    return producto_id
