@@ -8,17 +8,22 @@ from database.conexion import (
     agregar_producto_con_variante, 
     obtener_variantes_stock,
     eliminar_variante,
-    actualizar_variante
+    actualizar_variante,
+    registrar_venta_carrito,
+    obtener_resumen_ventas_hoy,
+    obtener_reporte_ventas
 )
 
+# Configuración visual global
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
+
 
 class VentanaEditar(ctk.CTkToplevel):
     def __init__(self, parent, var_id, talle_actual, color_actual, stock_actual, callback_actualizar):
         super().__init__(parent)
         self.title("Editar Prenda")
-        self.geometry("300x250")
+        self.geometry("320x260")
         self.var_id = var_id
         self.callback = callback_actualizar
 
@@ -58,39 +63,410 @@ class AppStock(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Sistema de Stock - Ropa Masculina")
-        self.geometry("850x650")
+        self.title("Sistema de Gestión - La Pyme Style")
+        self.geometry("1100x680")
 
-        # Guardará la referencia a la ventana para evitar duplicados
         self.ventana_editar = None
+
+        # Variables de ordenamiento para el inventario
+        self.columna_orden = "producto"
+        self.direccion_orden = "ASC"
+
+        # Carrito de compras actual: lista de dicts
+        self.carrito = []
+        self.dict_variantes = {}
 
         inicializar_bd()
 
-        self.tabview = ctk.CTkTabview(self)
-        self.tabview.pack(padx=10, pady=10, fill="both", expand=True)
+        # Configuración del grid principal
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
 
-        self.tab_carga = self.tabview.add("Cargar Prenda")
-        self.tab_inventario = self.tabview.add("Ver Inventario")
+        # -------------------------------------------------------------
+        # MENÚ LATERAL (SIDEBAR)
+        # -------------------------------------------------------------
+        self.sidebar_frame = ctk.CTkFrame(self, width=180, corner_radius=0)
+        self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
+        self.sidebar_frame.grid_rowconfigure(6, weight=1)
 
-        self.setup_tab_carga()
+        self.logo_label = ctk.CTkLabel(self.sidebar_frame, text="⚡ La Pyme", font=ctk.CTkFont(size=20, weight="bold"))
+        self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 20))
+
+        self.btn_inicio = ctk.CTkButton(self.sidebar_frame, text="🏠  Inicio", anchor="w", command=self.mostrar_inicio)
+        self.btn_inicio.grid(row=1, column=0, padx=15, pady=5, sticky="ew")
+
+        self.btn_ventas = ctk.CTkButton(self.sidebar_frame, text="🛒  Ventas", anchor="w", command=self.mostrar_ventas)
+        self.btn_ventas.grid(row=2, column=0, padx=15, pady=5, sticky="ew")
+
+        self.btn_compras = ctk.CTkButton(self.sidebar_frame, text="🛍️  Compras", anchor="w", command=self.mostrar_compras)
+        self.btn_compras.grid(row=3, column=0, padx=15, pady=5, sticky="ew")
+
+        self.btn_stock = ctk.CTkButton(self.sidebar_frame, text="📦  Stock", anchor="w", command=self.mostrar_stock)
+        self.btn_stock.grid(row=4, column=0, padx=15, pady=5, sticky="ew")
+
+        self.btn_reportes = ctk.CTkButton(self.sidebar_frame, text="📊  Reportes", anchor="w", command=self.mostrar_reportes)
+        self.btn_reportes.grid(row=5, column=0, padx=15, pady=5, sticky="ew")
+
+        self.botones_menu = [self.btn_inicio, self.btn_ventas, self.btn_compras, self.btn_stock, self.btn_reportes]
+
+        # -------------------------------------------------------------
+        # VISTAS / MÓDULOS DEL PANEL DERECHO
+        # -------------------------------------------------------------
+        self.view_inicio = ctk.CTkFrame(self, fg_color="transparent")
+        self.view_ventas = ctk.CTkFrame(self, fg_color="transparent")
+        self.view_compras = ctk.CTkFrame(self, fg_color="transparent")
+        self.view_stock = ctk.CTkFrame(self, fg_color="transparent")
+        self.view_reportes = ctk.CTkFrame(self, fg_color="transparent")
+
+        self.setup_vista_inicio()
+        self.setup_vista_ventas()
+        self.setup_vista_compras()
+        self.setup_vista_stock()
+        self.setup_vista_reportes()
+
+        self.mostrar_inicio()
+
+    def resaltar_boton(self, boton_activo):
+        for btn in self.botones_menu:
+            if btn == boton_activo:
+                btn.configure(fg_color=["#3B82F6", "#1D4ED8"], text_color="white")
+            else:
+                btn.configure(fg_color="transparent", text_color=["gray10", "gray90"])
+
+    def ocultar_vistas(self):
+        self.view_inicio.grid_forget()
+        self.view_ventas.grid_forget()
+        self.view_compras.grid_forget()
+        self.view_stock.grid_forget()
+        self.view_reportes.grid_forget()
+
+    # -------------------------------------------------------------
+    # NAVEGACIÓN
+    # -------------------------------------------------------------
+    def mostrar_inicio(self):
+        self.ocultar_vistas()
+        self.resaltar_boton(self.btn_inicio)
+        self.view_inicio.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
+        self.actualizar_resumen_inicio()
+
+    def mostrar_ventas(self):
+        self.ocultar_vistas()
+        self.resaltar_boton(self.btn_ventas)
+        self.view_ventas.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
+        self.cargar_opciones_ventas()
+
+    def mostrar_compras(self):
+        self.ocultar_vistas()
+        self.resaltar_boton(self.btn_compras)
+        self.view_compras.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
+
+    def mostrar_stock(self):
+        self.ocultar_vistas()
+        self.resaltar_boton(self.btn_stock)
+        self.view_stock.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
+        self.actualizar_inventario()
+
+    def mostrar_reportes(self):
+        self.ocultar_vistas()
+        self.resaltar_boton(self.btn_reportes)
+        self.view_reportes.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
+        self.actualizar_reportes()
+
+    # -------------------------------------------------------------
+    # VISTA 1: INICIO
+    # -------------------------------------------------------------
+    def setup_vista_inicio(self):
+        lbl_titulo = ctk.CTkLabel(self.view_inicio, text="Panel de Inicio", font=("Arial", 20, "bold"))
+        lbl_titulo.pack(anchor="w", pady=(0, 15))
+
+        self.card_ventas = ctk.CTkFrame(self.view_inicio, corner_radius=10)
+        self.card_ventas.pack(fill="x", pady=10)
+
+        lbl_resumen = ctk.CTkLabel(self.card_ventas, text="🟢 Hoy", font=("Arial", 14, "bold"))
+        lbl_resumen.pack(side="left", padx=15, pady=15)
+
+        self.lbl_monto_hoy = ctk.CTkLabel(self.card_ventas, text="Ventas de hoy: $0.00 (0 operaciones)", font=("Arial", 16, "bold"), text_color="#10B981")
+        self.lbl_monto_hoy.pack(side="right", padx=15, pady=15)
+
+    def actualizar_resumen_inicio(self):
+        total, ops = obtener_resumen_ventas_hoy()
+        self.lbl_monto_hoy.configure(text=f"Ventas de hoy: ${total:,.2f} ({ops} operaciones)")
+
+    # -------------------------------------------------------------
+    # VISTA 2: VENTAS (POS CON CARRITO / FACTURA)
+    # -------------------------------------------------------------
+    def setup_vista_ventas(self):
+        lbl_titulo = ctk.CTkLabel(self.view_ventas, text="Punto de Venta (POS)", font=("Arial", 20, "bold"))
+        lbl_titulo.pack(anchor="w", pady=(0, 10))
+
+        # Layout dividido en 2 columnas: Formulario Selección (izq) y Factura/Carrito (der)
+        container_pos = ctk.CTkFrame(self.view_ventas, fg_color="transparent")
+        container_pos.pack(fill="both", expand=True)
+        container_pos.columnconfigure(0, weight=1)
+        container_pos.columnconfigure(1, weight=1)
+
+        # Panel Izquierdo: Agregar productos
+        frame_izq = ctk.CTkFrame(container_pos)
+        frame_izq.grid(row=0, column=0, sticky="nsew", padx=(0, 5), pady=5)
+
+        lbl_sec1 = ctk.CTkLabel(frame_izq, text="Añadir Prendas", font=("Arial", 14, "bold"))
+        lbl_sec1.pack(anchor="w", padx=15, pady=(15, 5))
+
+        lbl_prod = ctk.CTkLabel(frame_izq, text="Seleccionar Prenda:", font=("Arial", 12, "bold"))
+        lbl_prod.pack(anchor="w", padx=15, pady=(10, 2))
+
+        self.combo_prendas = ctk.CTkOptionMenu(frame_izq, values=["Cargando prendas..."], command=self.al_seleccionar_prenda)
+        self.combo_prendas.pack(fill="x", padx=15, pady=5)
+
+        self.lbl_info_variante = ctk.CTkLabel(frame_izq, text="Precio: $0.00 | Stock disponible: 0", font=("Arial", 12))
+        self.lbl_info_variante.pack(anchor="w", padx=15, pady=5)
+
+        lbl_cant = ctk.CTkLabel(frame_izq, text="Cantidad:", font=("Arial", 12, "bold"))
+        lbl_cant.pack(anchor="w", padx=15, pady=(10, 2))
+
+        self.txt_cant_venta = ctk.CTkEntry(frame_izq, placeholder_text="1")
+        self.txt_cant_venta.insert(0, "1")
+        self.txt_cant_venta.pack(fill="x", padx=15, pady=5)
+
+        btn_add_carrito = ctk.CTkButton(
+            frame_izq, 
+            text="➕ Agregar al Carrito", 
+            font=("Arial", 13, "bold"), 
+            fg_color="#3B82F6", 
+            hover_color="#2563EB",
+            height=35,
+            command=self.agregar_al_carrito
+        )
+        btn_add_carrito.pack(padx=15, pady=15, fill="x")
+
+        self.lbl_estado_pos = ctk.CTkLabel(frame_izq, text="", font=("Arial", 12))
+        self.lbl_estado_pos.pack(pady=5)
+
+        # Panel Derecho: Carrito y Cobro
+        frame_der = ctk.CTkFrame(container_pos)
+        frame_der.grid(row=0, column=1, sticky="nsew", padx=(5, 0), pady=5)
+
+        lbl_sec2 = ctk.CTkLabel(frame_der, text="🧾 Detalle / Factura", font=("Arial", 14, "bold"))
+        lbl_sec2.pack(anchor="w", padx=15, pady=(15, 5))
+
+        self.scroll_carrito = ctk.CTkScrollableFrame(frame_der, label_text="Productos en Ticket")
+        self.scroll_carrito.pack(fill="both", expand=True, padx=15, pady=5)
+
+        # Subtotal y Método de pago
+        frame_cobro = ctk.CTkFrame(frame_der, fg_color="transparent")
+        frame_cobro.pack(fill="x", padx=15, pady=10)
+
+        self.lbl_total_carrito = ctk.CTkLabel(frame_cobro, text="TOTAL: $0.00", font=("Arial", 18, "bold"), text_color="#10B981")
+        self.lbl_total_carrito.pack(anchor="e", pady=(0, 10))
+
+        lbl_pago = ctk.CTkLabel(frame_cobro, text="Método de Pago:", font=("Arial", 12, "bold"))
+        lbl_pago.pack(anchor="w", pady=(0, 2))
+
+        self.combo_pago = ctk.CTkOptionMenu(frame_cobro, values=["Efectivo", "Mercado Pago", "Transferencia", "Débito", "Crédito"])
+        self.combo_pago.pack(fill="x", pady=5)
+
+        btn_finalizar = ctk.CTkButton(
+            frame_cobro, 
+            text="💳 Finalizar Venta", 
+            font=("Arial", 14, "bold"), 
+            fg_color="#10B981", 
+            hover_color="#059669",
+            height=40,
+            command=self.finalizar_venta
+        )
+        btn_finalizar.pack(fill="x", pady=(10, 0))
+
+    def cargar_opciones_ventas(self):
+        registros = obtener_variantes_stock()
+        self.dict_variantes = {}
+        opciones = []
+
+        for item in registros:
+            var_id, nombre, cat, talle, color, precio, stock = item
+            texto_opcion = f"{nombre} ({talle}/{color})"
+            self.dict_variantes[texto_opcion] = {
+                "id": var_id,
+                "nombre": nombre,
+                "talle": talle,
+                "color": color,
+                "precio": precio,
+                "stock": stock
+            }
+            opciones.append(texto_opcion)
+
+        if opciones:
+            self.combo_prendas.configure(values=opciones)
+            self.combo_prendas.set(opciones[0])
+            self.al_seleccionar_prenda(opciones[0])
+        else:
+            self.combo_prendas.configure(values=["No hay prendas cargadas"])
+            self.combo_prendas.set("No hay prendas cargadas")
+            self.lbl_info_variante.configure(text="Cargá prendas en el módulo de Stock.")
+
+    def al_seleccionar_prenda(self, seleccion):
+        if seleccion in self.dict_variantes:
+            info = self.dict_variantes[seleccion]
+            self.lbl_info_variante.configure(text=f"Precio: ${info['precio']:.2f} | Stock disponible: {info['stock']}")
+
+    def agregar_al_carrito(self):
+        seleccion = self.combo_prendas.get()
+        if seleccion not in self.dict_variantes:
+            self.lbl_estado_pos.configure(text="Seleccioná una prenda válida.", text_color="red")
+            return
+
+        try:
+            cant = int(self.txt_cant_venta.get().strip())
+            if cant <= 0:
+                raise ValueError()
+        except ValueError:
+            self.lbl_estado_pos.configure(text="Ingresá una cantidad válida.", text_color="red")
+            return
+
+        info = self.dict_variantes[seleccion]
+
+        # Verificar si la cantidad solicitada supera el stock
+        stock_disp = info["stock"]
+        cant_ya_en_carrito = sum(item["cantidad"] for item in self.carrito if item["variante_id"] == info["id"])
+
+        if cant_ya_en_carrito + cant > stock_disp:
+            self.lbl_estado_pos.configure(text=f"Supera el stock disponible ({stock_disp}).", text_color="red")
+            return
+
+        # Si ya está en el carrito, sumamos cantidad
+        for item in self.carrito:
+            if item["variante_id"] == info["id"]:
+                item["cantidad"] += cant
+                self.actualizar_vista_carrito()
+                self.lbl_estado_pos.configure(text="Producto sumado al carrito.", text_color="#10B981")
+                return
+
+        # Si no está, lo agregamos
+        self.carrito.append({
+            "variante_id": info["id"],
+            "nombre": info["nombre"],
+            "talle": info["talle"],
+            "color": info["color"],
+            "precio_unitario": info["precio"],
+            "cantidad": cant
+        })
+
+        self.lbl_estado_pos.configure(text="Agregado al ticket.", text_color="#10B981")
+        self.actualizar_vista_carrito()
+
+    def actualizar_vista_carrito(self):
+        for widget in self.scroll_carrito.winfo_children():
+            widget.destroy()
+
+        total = 0.0
+
+        if not self.carrito:
+            ctk.CTkLabel(self.scroll_carrito, text="El carrito está vacío.").pack(pady=20)
+            self.lbl_total_carrito.configure(text="TOTAL: $0.00")
+            return
+
+        for idx, item in enumerate(self.carrito):
+            subtotal = item["cantidad"] * item["precio_unitario"]
+            total += subtotal
+
+            frame_item = ctk.CTkFrame(self.scroll_carrito)
+            frame_item.pack(fill="x", pady=3, padx=2)
+
+            text_desc = f"{item['nombre']} ({item['talle']}/{item['color']})\n${item['precio_unitario']:.2f} x {item['cantidad']} = ${subtotal:,.2f}"
+            ctk.CTkLabel(frame_item, text=text_desc, font=("Arial", 11), justify="left", anchor="w").pack(side="left", padx=8, pady=5, fill="x", expand=True)
+
+            # Botón restar
+            btn_minus = ctk.CTkButton(
+                frame_item, 
+                text="-", 
+                width=24, 
+                height=24, 
+                fg_color="#F59E0B",
+                command=lambda i=idx: self.restar_item_carrito(i)
+            )
+            btn_minus.pack(side="left", padx=2)
+
+            # Botón eliminar
+            btn_del = ctk.CTkButton(
+                frame_item, 
+                text="🗑️", 
+                width=24, 
+                height=24, 
+                fg_color="#EF4444",
+                command=lambda i=idx: self.eliminar_item_carrito(i)
+            )
+            btn_del.pack(side="left", padx=2)
+
+        self.lbl_total_carrito.configure(text=f"TOTAL: ${total:,.2f}")
+
+    def restar_item_carrito(self, index):
+        if self.carrito[index]["cantidad"] > 1:
+            self.carrito[index]["cantidad"] -= 1
+        else:
+            self.carrito.pop(index)
+        self.actualizar_vista_carrito()
+
+    def eliminar_item_carrito(self, index):
+        self.carrito.pop(index)
+        self.actualizar_vista_carrito()
+
+    def finalizar_venta(self):
+        if not self.carrito:
+            self.lbl_estado_pos.configure(text="El carrito está vacío.", text_color="red")
+            return
+
+        try:
+            monto_total = registrar_venta_carrito(self.carrito, self.combo_pago.get())
+            self.lbl_estado_pos.configure(
+                text=f"¡Venta concretada! Total: ${monto_total:,.2f}", 
+                text_color="#10B981"
+            )
+            self.carrito = []
+            self.actualizar_vista_carrito()
+            self.cargar_opciones_ventas()
+        except ValueError as err:
+            self.lbl_estado_pos.configure(text=str(err), text_color="red")
+
+    # -------------------------------------------------------------
+    # VISTA 3: COMPRAS
+    # -------------------------------------------------------------
+    def setup_vista_compras(self):
+        lbl_titulo = ctk.CTkLabel(self.view_compras, text="Módulo de Compras", font=("Arial", 20, "bold"))
+        lbl_titulo.pack(anchor="w", pady=(0, 15))
+
+        frame_placeholder = ctk.CTkFrame(self.view_compras)
+        frame_placeholder.pack(fill="both", expand=True)
+
+        lbl_proximamente = ctk.CTkLabel(frame_placeholder, text="🛍️ Módulo de Proveedores y Compras\nAcá ingresarás facturas de proveedores para reponer stock.", font=("Arial", 14))
+        lbl_proximamente.pack(expand=True)
+
+    # -------------------------------------------------------------
+    # VISTA 4: STOCK
+    # -------------------------------------------------------------
+    def setup_vista_stock(self):
+        lbl_titulo = ctk.CTkLabel(self.view_stock, text="Gestión de Stock", font=("Arial", 20, "bold"))
+        lbl_titulo.pack(anchor="w", pady=(0, 10))
+
+        self.tabview_stock = ctk.CTkTabview(self.view_stock)
+        self.tabview_stock.pack(fill="both", expand=True)
+
+        self.tab_inventario = self.tabview_stock.add("Ver Inventario")
+        self.tab_carga = self.tabview_stock.add("Cargar Prenda")
+
         self.setup_tab_inventario()
+        self.setup_tab_carga()
 
     def setup_tab_carga(self):
-        # Frame contenedor del formulario
         frame = ctk.CTkFrame(self.tab_carga)
         frame.pack(pady=15, padx=20, fill="both", expand=True)
 
-        # Configurar 2 columnas centradas
         frame.columnconfigure(0, weight=1)
         frame.columnconfigure(1, weight=1)
 
-        # 1. Nombre de Prenda (Ocupa las 2 columnas)
         lbl_nombre = ctk.CTkLabel(frame, text="Nombre de Prenda *", font=("Arial", 12, "bold"), anchor="w")
         lbl_nombre.grid(row=0, column=0, columnspan=2, padx=15, pady=(10, 2), sticky="ew")
         self.txt_nombre = ctk.CTkEntry(frame, placeholder_text="Ej: Remera Oversize Básica")
         self.txt_nombre.grid(row=1, column=0, columnspan=2, padx=15, pady=(0, 10), sticky="ew")
 
-        # 2. Categoría y Talle
         lbl_cat = ctk.CTkLabel(frame, text="Categoría *", font=("Arial", 12, "bold"), anchor="w")
         lbl_cat.grid(row=2, column=0, padx=15, pady=(5, 2), sticky="ew")
         self.txt_categoria = ctk.CTkEntry(frame, placeholder_text="Ej: Remeras, Pantalones")
@@ -101,7 +477,6 @@ class AppStock(ctk.CTk):
         self.txt_talle = ctk.CTkEntry(frame, placeholder_text="Ej: M, L, 42")
         self.txt_talle.grid(row=3, column=1, padx=15, pady=(0, 10), sticky="ew")
 
-        # 3. Color y Stock Inicial
         lbl_color = ctk.CTkLabel(frame, text="Color *", font=("Arial", 12, "bold"), anchor="w")
         lbl_color.grid(row=4, column=0, padx=15, pady=(5, 2), sticky="ew")
         self.txt_color = ctk.CTkEntry(frame, placeholder_text="Ej: Negro, Azul")
@@ -112,7 +487,6 @@ class AppStock(ctk.CTk):
         self.txt_stock = ctk.CTkEntry(frame, placeholder_text="Ej: 10")
         self.txt_stock.grid(row=5, column=1, padx=15, pady=(0, 10), sticky="ew")
 
-        # 4. Precio Costo y Precio Venta
         lbl_costo = ctk.CTkLabel(frame, text="Precio Costo ($)", font=("Arial", 12, "bold"), anchor="w")
         lbl_costo.grid(row=6, column=0, padx=15, pady=(5, 2), sticky="ew")
         self.txt_costo = ctk.CTkEntry(frame, placeholder_text="0.00")
@@ -123,12 +497,12 @@ class AppStock(ctk.CTk):
         self.txt_venta = ctk.CTkEntry(frame, placeholder_text="0.00")
         self.txt_venta.grid(row=7, column=1, padx=15, pady=(0, 10), sticky="ew")
 
-        # Botón de guardado
         btn_guardar = ctk.CTkButton(self.tab_carga, text="Guardar Prenda", font=("Arial", 13, "bold"), height=35, command=self.guardar_registro)
         btn_guardar.pack(pady=10)
 
         self.lbl_estado = ctk.CTkLabel(self.tab_carga, text="", font=("Arial", 12))
         self.lbl_estado.pack(pady=5)
+
     def guardar_registro(self):
         try:
             nombre = self.txt_nombre.get().strip()
@@ -167,13 +541,20 @@ class AppStock(ctk.CTk):
         self.scroll_frame = ctk.CTkScrollableFrame(self.tab_inventario, label_text="Inventario Disponible")
         self.scroll_frame.pack(padx=10, pady=5, fill="both", expand=True)
 
+    def cambiar_orden(self, columna):
+        if self.columna_orden == columna:
+            self.direccion_orden = "DESC" if self.direccion_orden == "ASC" else "ASC"
+        else:
+            self.columna_orden = columna
+            self.direccion_orden = "ASC"
+
         self.actualizar_inventario()
 
     def actualizar_inventario(self):
         for widget in self.scroll_frame.winfo_children():
             widget.destroy()
 
-        registros = obtener_variantes_stock()
+        registros = obtener_variantes_stock(self.columna_orden, self.direccion_orden)
 
         if not registros:
             lbl_vacio = ctk.CTkLabel(self.scroll_frame, text="No hay prendas registradas.")
@@ -187,10 +568,33 @@ class AppStock(ctk.CTk):
         self.scroll_frame.grid_columnconfigure(4, weight=1)
         self.scroll_frame.grid_columnconfigure(5, weight=1)
 
-        encabezados = ["Producto", "Talle", "Color", "Precio", "Stock", "Acciones"]
-        for col_idx, texto in enumerate(encabezados):
-            lbl = ctk.CTkLabel(self.scroll_frame, text=texto, font=("Arial", 12, "bold"))
-            lbl.grid(row=0, column=col_idx, padx=5, pady=5, sticky="ew")
+        encabezados = [
+            ("Producto", "producto"),
+            ("Talle", "talle"),
+            ("Color", "color"),
+            ("Precio", "precio"),
+            ("Stock", "stock")
+        ]
+
+        for col_idx, (texto, clave_col) in enumerate(encabezados):
+            flecha = ""
+            if self.columna_orden == clave_col:
+                flecha = " ▲" if self.direccion_orden == "ASC" else " ▼"
+
+            btn_encabezado = ctk.CTkButton(
+                self.scroll_frame,
+                text=f"{texto}{flecha}",
+                font=("Arial", 12, "bold"),
+                fg_color="transparent",
+                hover_color="#2a2d2e",
+                text_color="#3b82f6",
+                anchor="w" if col_idx == 0 else "center",
+                command=lambda c=clave_col: self.cambiar_orden(c)
+            )
+            btn_encabezado.grid(row=0, column=col_idx, padx=2, pady=5, sticky="ew")
+
+        lbl_acciones = ctk.CTkLabel(self.scroll_frame, text="Acciones", font=("Arial", 12, "bold"))
+        lbl_acciones.grid(row=0, column=5, padx=5, pady=5)
 
         for row_idx, item in enumerate(registros, start=1):
             var_id, nombre, cat, talle, color, precio, stock = item
@@ -233,6 +637,104 @@ class AppStock(ctk.CTk):
     def borrar_registro(self, var_id):
         eliminar_variante(var_id)
         self.actualizar_inventario()
+
+    # -------------------------------------------------------------
+    # VISTA 5: REPORTES Y ESTADÍSTICAS
+    # -------------------------------------------------------------
+    def setup_vista_reportes(self):
+        lbl_titulo = ctk.CTkLabel(self.view_reportes, text="Módulo de Reportes", font=("Arial", 20, "bold"))
+        lbl_titulo.pack(anchor="w", pady=(0, 10))
+
+        frame_filtros = ctk.CTkFrame(self.view_reportes)
+        frame_filtros.pack(fill="x", pady=(0, 10))
+
+        lbl_filtro = ctk.CTkLabel(frame_filtros, text="Período:", font=("Arial", 12, "bold"))
+        lbl_filtro.pack(side="left", padx=(15, 5), pady=10)
+
+        self.seg_periodo = ctk.CTkSegmentedButton(
+            frame_filtros, 
+            values=["Hoy", "7 Días", "Este Mes", "Histórico"],
+            command=self.al_cambiar_periodo
+        )
+        self.seg_periodo.set("Hoy")
+        self.seg_periodo.pack(side="left", padx=10, pady=10)
+
+        frame_cards = ctk.CTkFrame(self.view_reportes, fg_color="transparent")
+        frame_cards.pack(fill="x", pady=5)
+        frame_cards.columnconfigure((0, 1, 2, 3), weight=1)
+
+        card1 = ctk.CTkFrame(frame_cards)
+        card1.grid(row=0, column=0, padx=5, sticky="ew")
+        ctk.CTkLabel(card1, text="Total Facturado", font=("Arial", 11)).pack(pady=(10, 2))
+        self.lbl_card_total = ctk.CTkLabel(card1, text="$0.00", font=("Arial", 16, "bold"), text_color="#3B82F6")
+        self.lbl_card_total.pack(pady=(0, 10))
+
+        card2 = ctk.CTkFrame(frame_cards)
+        card2.grid(row=0, column=1, padx=5, sticky="ew")
+        ctk.CTkLabel(card2, text="Ganancia Estimada", font=("Arial", 11)).pack(pady=(10, 2))
+        self.lbl_card_ganancia = ctk.CTkLabel(card2, text="$0.00", font=("Arial", 16, "bold"), text_color="#10B981")
+        self.lbl_card_ganancia.pack(pady=(0, 10))
+
+        card3 = ctk.CTkFrame(frame_cards)
+        card3.grid(row=0, column=2, padx=5, sticky="ew")
+        ctk.CTkLabel(card3, text="Unidades Vendidas", font=("Arial", 11)).pack(pady=(10, 2))
+        self.lbl_card_unidades = ctk.CTkLabel(card3, text="0", font=("Arial", 16, "bold"), text_color="#F59E0B")
+        self.lbl_card_unidades.pack(pady=(0, 10))
+
+        card4 = ctk.CTkFrame(frame_cards)
+        card4.grid(row=0, column=3, padx=5, sticky="ew")
+        ctk.CTkLabel(card4, text="Operaciones", font=("Arial", 11)).pack(pady=(10, 2))
+        self.lbl_card_ops = ctk.CTkLabel(card4, text="0", font=("Arial", 16, "bold"), text_color="#EC4899")
+        self.lbl_card_ops.pack(pady=(0, 10))
+
+        self.scroll_ventas = ctk.CTkScrollableFrame(self.view_reportes, label_text="Historial Detallado de Ventas")
+        self.scroll_ventas.pack(fill="both", expand=True, pady=10)
+
+    def al_cambiar_periodo(self, valor):
+        self.actualizar_reportes()
+
+    def actualizar_reportes(self):
+        opcion = self.seg_periodo.get()
+        mapeo = {
+            "Hoy": "hoy",
+            "7 Días": "7dias",
+            "Este Mes": "mes",
+            "Histórico": "todo"
+        }
+        periodo_sql = mapeo.get(opcion, "hoy")
+
+        metricas, ventas = obtener_reporte_ventas(periodo_sql)
+
+        self.lbl_card_total.configure(text=f"${metricas['total_facturado']:,.2f}")
+        self.lbl_card_ganancia.configure(text=f"${metricas['ganancia_estimada']:,.2f}")
+        self.lbl_card_unidades.configure(text=str(metricas['unidades_vendidas']))
+        self.lbl_card_ops.configure(text=str(metricas['operaciones']))
+
+        for widget in self.scroll_ventas.winfo_children():
+            widget.destroy()
+
+        if not ventas:
+            lbl_vacio = ctk.CTkLabel(self.scroll_ventas, text="No se registraron ventas en este período.")
+            lbl_vacio.pack(pady=20)
+            return
+
+        self.scroll_ventas.grid_columnconfigure((0, 1, 2, 3, 4, 5), weight=1)
+
+        encabezados = ["Fecha / Hora", "Producto", "Variante", "Cant.", "Método Pago", "Total"]
+        for col_idx, texto in enumerate(encabezados):
+            lbl_enc = ctk.CTkLabel(self.scroll_ventas, text=texto, font=("Arial", 11, "bold"), text_color="#3B82F6")
+            lbl_enc.grid(row=0, column=col_idx, padx=5, pady=5)
+
+        for row_idx, item in enumerate(ventas, start=1):
+            v_id, fecha, nombre, talle, color, cant, p_unit, total, pago, costo = item
+            fecha_str = str(fecha)[:16] if fecha else "-"
+
+            ctk.CTkLabel(self.scroll_ventas, text=fecha_str, font=("Arial", 11)).grid(row=row_idx, column=0, padx=5, pady=2)
+            ctk.CTkLabel(self.scroll_ventas, text=nombre, font=("Arial", 11)).grid(row=row_idx, column=1, padx=5, pady=2)
+            ctk.CTkLabel(self.scroll_ventas, text=f"{talle} / {color}", font=("Arial", 11)).grid(row=row_idx, column=2, padx=5, pady=2)
+            ctk.CTkLabel(self.scroll_ventas, text=str(cant), font=("Arial", 11)).grid(row=row_idx, column=3, padx=5, pady=2)
+            ctk.CTkLabel(self.scroll_ventas, text=pago, font=("Arial", 11)).grid(row=row_idx, column=4, padx=5, pady=2)
+            ctk.CTkLabel(self.scroll_ventas, text=f"${total:,.2f}", font=("Arial", 11, "bold"), text_color="#10B981").grid(row=row_idx, column=5, padx=5, pady=2)
 
 
 if __name__ == "__main__":
