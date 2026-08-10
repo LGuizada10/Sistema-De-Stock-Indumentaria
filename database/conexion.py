@@ -60,7 +60,24 @@ def agregar_producto_con_variante(nombre, categoria, costo, venta, talle, color,
         )
         conn.commit()
         return sku
-
+def obtener_variantes_stock():
+    """Devuelve todas las variantes guardadas junto a los datos de su producto."""
+    with obtener_conexion() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+        SELECT 
+            v.sku,
+            p.nombre,
+            p.categoria,
+            v.talle,
+            v.color,
+            p.precio_venta,
+            v.stock_actual
+        FROM variantes v
+        JOIN productos p ON v.producto_id = p.id
+        ORDER BY p.nombre ASC;
+        """)
+        return cursor.fetchall()
 if __name__ == "__main__":
     inicializar_bd()
     print("Base de datos creada e inicializada correctamente.")
