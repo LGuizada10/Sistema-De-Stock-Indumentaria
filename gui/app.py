@@ -153,16 +153,13 @@ class AppStock(ctk.CTk):
         self.btn_ventas = ctk.CTkButton(self.sidebar_frame, text="🛒  Ventas", anchor="w", command=self.mostrar_ventas)
         self.btn_ventas.grid(row=3, column=0, padx=15, pady=5, sticky="ew")
 
-        self.btn_compras = ctk.CTkButton(self.sidebar_frame, text="🛍️  Compras", anchor="w", command=self.mostrar_compras)
-        self.btn_compras.grid(row=4, column=0, padx=15, pady=5, sticky="ew")
-
         self.btn_stock = ctk.CTkButton(self.sidebar_frame, text="📦  Stock", anchor="w", command=self.mostrar_stock)
         self.btn_stock.grid(row=5, column=0, padx=15, pady=5, sticky="ew")
 
         self.btn_reportes = ctk.CTkButton(self.sidebar_frame, text="📊  Reportes", anchor="w", command=self.mostrar_reportes)
         self.btn_reportes.grid(row=6, column=0, padx=15, pady=5, sticky="ew")
 
-        self.botones_menu = [self.btn_inicio, self.btn_caja, self.btn_ventas, self.btn_compras, self.btn_stock, self.btn_reportes]
+        self.botones_menu = [self.btn_inicio, self.btn_caja, self.btn_ventas, self.btn_stock, self.btn_reportes]
 
         # -------------------------------------------------------------
         # PANELS / VISTAS
@@ -194,7 +191,6 @@ class AppStock(ctk.CTk):
         self.view_inicio.grid_forget()
         self.view_caja.grid_forget()
         self.view_ventas.grid_forget()
-        self.view_compras.grid_forget()
         self.view_stock.grid_forget()
         self.view_reportes.grid_forget()
 
@@ -221,7 +217,6 @@ class AppStock(ctk.CTk):
 
     def mostrar_compras(self):
         self.ocultar_vistas()
-        self.resaltar_boton(self.btn_compras)
         self.view_compras.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
 
     def mostrar_stock(self):
@@ -410,7 +405,6 @@ class AppStock(ctk.CTk):
                     f"Apertura: {str(resumen['fecha_apertura'])[:16]}\n\n"
                     f"• Fondo Inicial: ${resumen['monto_inicial']:,.2f}\n"
                     f"• Ventas en Efectivo: ${resumen['ventas_efectivo']:,.2f}\n"
-                    f"• Ventas Digitales: ${resumen['ventas_digitales']:,.2f}\n"
                     f"• Ingresos Manuales: +${resumen['ingresos_extra']:,.2f}\n"
                     f"• Egresos/Gastos: -${resumen['egresos_extra']:,.2f}\n\n"
                     f"💵 EFECTIVO ESPERADO EN CAJA: ${resumen['efectivo_esperado']:,.2f}"
@@ -827,7 +821,33 @@ class AppStock(ctk.CTk):
 
         self.lbl_estado = ctk.CTkLabel(self.tab_carga, text="", font=("Arial", 12))
         self.lbl_estado.pack(pady=5)
+        lbl_cat = ctk.CTkLabel(frame, text="Categoría *", font=("Arial", 12, "bold"), anchor="w")
+        lbl_cat.grid(row=2, column=0, padx=15, pady=(5, 2), sticky="ew")
 
+        # Frame contenedor para alinear el combo y el botón de editar categorías
+        frame_cat_combo = ctk.CTkFrame(frame, fg_color="transparent")
+        frame_cat_combo.grid(row=3, column=0, padx=15, pady=(0, 10), sticky="ew")
+        frame_cat_combo.columnconfigure(0, weight=1)
+
+        self.combo_cat = ctk.CTkOptionMenu(frame_cat_combo, values=["➕ Nueva Categoría..."], command=self.al_cambiar_cat_combo)
+        self.combo_cat.grid(row=0, column=0, sticky="ew")
+
+        btn_gestionar_cat = ctk.CTkButton(
+            frame_cat_combo, 
+            text="⚙️", 
+            width=30, 
+            fg_color="#374151", 
+            hover_color="#4B5563",
+            command=self.abrir_gestor_categorias
+        )
+        btn_gestionar_cat.grid(row=0, column=1, padx=(5, 0))
+    def abrir_gestor_categorias(self):
+        ventana = VentanaGestionCategorias(self, self.actualizar_post_gestion_cat)
+        ventana.focus()
+
+    def actualizar_post_gestion_cat(self):
+        self.actualizar_categorias_combos()
+        self.actualizar_inventario()
     def setup_tab_carga_masiva(self):
         frame = ctk.CTkFrame(self.tab_carga_masiva, fg_color=COLOR_FRAME)
         frame.pack(pady=10, padx=15, fill="both", expand=True)
@@ -1178,7 +1198,65 @@ class AppStock(ctk.CTk):
 
         self.scroll_ventas.pack(fill="both", expand=True, pady=10)
 
+class VentanaGestionCategorias(ctk.CTkToplevel):
+    """Ventana para eliminar o renombrar/unificar categorías duplicadas."""
+    def __init__(self, parent, callback_actualizar):
+        super().__init__(parent)
+        self.title("Gestionar Categorías")
+        self.geometry("420x350")
+        self.configure(fg_color=COLOR_BG_DARK)
+        self.callback = callback_actualizar
+        self.attributes("-topmost", True)
 
+        ctk.CTkLabel(self, text="Gestionar Categorías", font=("Arial", 16, "bold"), text_color=COLOR_VERDE).pack(pady=(15, 10))
+
+        frame_form = ctk.CTkFrame(self, fg_color=COLOR_FRAME)
+        frame_form.pack(fill="both", expand=True, padx=20, pady=10)
+
+        # Categoría a Modificar
+        ctk.CTkLabel(frame_form, text="Seleccionar Categoría:", font=("Arial", 12, "bold")).pack(anchor="w", padx=15, pady=(10, 2))
+        
+        cats = obtener_categorias_unicas()
+        self.combo_cat_eliminar = ctk.CTkOptionMenu(frame_form, values=cats if cats else ["Sin categorías"])
+        self.combo_cat_eliminar.pack(fill="x", padx=15, pady=5)
+
+        # Nueva opción / Reemplazar por
+        ctk.CTkLabel(frame_form, text="Renombrar / Mover productos a:", font=("Arial", 12, "bold")).pack(anchor="w", padx=15, pady=(10, 2))
+        self.txt_nueva_cat = ctk.CTkEntry(frame_form, placeholder_text="Ej: JEAN (Dejar vacío para borrar productos)")
+        self.txt_nueva_cat.pack(fill="x", padx=15, pady=5)
+
+        lbl_info = ctk.CTkLabel(
+            frame_form, 
+            text="* Si indicas un nombre, las prendas pasarán a esa categoría.\n* Si lo dejas vacío, se ELIMINARÁN los productos asociados.",
+            font=("Arial", 10),
+            justify="left",
+            text_color="#9CA3AF"
+        )
+        lbl_info.pack(anchor="w", padx=15, pady=5)
+
+        # Botones
+        frame_btns = ctk.CTkFrame(self, fg_color="transparent")
+        frame_btns.pack(fill="x", padx=20, pady=(0, 15))
+        frame_btns.columnconfigure((0, 1), weight=1)
+
+        btn_cancelar = ctk.CTkButton(frame_btns, text="Cancelar", fg_color="#374151", command=self.destroy)
+        btn_cancelar.grid(row=0, column=0, padx=5, sticky="ew")
+
+        btn_aplicar = ctk.CTkButton(frame_btns, text="Aplicar Cambio", fg_color=COLOR_VERDE, hover_color=COLOR_VERDE_HOVER, command=self.ejecutar_cambio)
+        btn_aplicar.grid(row=0, column=1, padx=5, sticky="ew")
+
+    def ejecutar_cambio(self):
+        cat_origen = self.combo_cat_eliminar.get()
+        if not cat_origen or cat_origen == "Sin categorías":
+            return
+
+        cat_destino = self.txt_nueva_cat.get().strip()
+
+        from database.conexion import eliminar_o_renombrar_categoria
+        eliminar_o_renombrar_categoria(cat_origen, cat_destino if cat_destino else None)
+
+        self.callback()
+        self.destroy()
 if __name__ == "__main__":
     app = AppStock()
     app.mainloop()

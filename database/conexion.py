@@ -390,7 +390,6 @@ def obtener_resumen_caja_actual():
     ventas_pago = dict(cursor.fetchall())
 
     ventas_efectivo = ventas_pago.get('Efectivo', 0.0)
-    ventas_digitales = sum(monto for mp, monto in ventas_pago.items() if mp != 'Efectivo')
 
     cursor.execute('''
         SELECT tipo, SUM(monto) 
@@ -404,7 +403,7 @@ def obtener_resumen_caja_actual():
     egresos_extra = movs.get('EGRESO', 0.0)
 
     efectivo_esperado = monto_inicial + ventas_efectivo + ingresos_extra - egresos_extra
-    total_recaudado_general = ventas_efectivo + ventas_digitales
+    total_recaudado_general = ventas_efectivo 
 
     conn.close()
 
@@ -413,7 +412,6 @@ def obtener_resumen_caja_actual():
         "fecha_apertura": fecha_apertura,
         "monto_inicial": monto_inicial,
         "ventas_efectivo": ventas_efectivo,
-        "ventas_digitales": ventas_digitales,
         "ingresos_extra": ingresos_extra,
         "egresos_extra": egresos_extra,
         "efectivo_esperado": efectivo_esperado,
@@ -444,3 +442,52 @@ def cerrar_caja(caja_id, monto_real_efectivo, observaciones=""):
     conn.commit()
     conn.close()
     return diferencia
+
+def eliminar_o_renombrar_categoria(cat_origen, cat_destino=None):
+    """
+    Renombra una categoría o la elimina junto con todos sus productos,
+    desactivando temporalmente las Foreign Keys para evitar bloqueos por integridad.
+    """
+    conn = obtener_conexion()
+    conn.execute("PRAGMA busy_timeout = 5000")
+    
+    try:
+        # 1. Desactivar temporalmente la verificación de claves foráneas
+        conn.execute("PRAGMA foreign_keys = OFF")
+        
+        with conn:
+            cursor = conn.cursor()
+            
+            if cat_destino:
+                # Caso 1: Renombrar / Unificar categoría (ej: "Jean" -> "JEAN")
+                cursor.execute(
+                    "UPDATE productos SET categoria = ? WHERE categoria = ?", 
+                    (cat_destino, cat_origen)
+                )
+            else:
+                # Caso 2: Eliminar la categoría y todo su stock asociado
+                # Obtener los IDs de los productos a borrar
+                cursor.execute("SELECT id FROM productos WHERE categoria = ?", (cat_origen,))
+                ids_productos = [row[0] for row in cursor.fetchall()]
+                
+                if ids_productos:
+                    placeholders = ','.join('?' for _ in ids_productos)
+                    
+                    # Intentar borrar registros vinculados en tablas comunes si existen
+                    tablas_posibles = ["ventas_detalle", "detalle_ventas", "movimientos_stock", "historial_stock"]
+                    for tabla in tablas_posibles:
+                        try:
+                            cursor.execute(f"DELETE FROM {tabla} WHERE producto_id IN ({placeholders})", ids_productos)
+                        except sqlite3.OperationalError:
+                            pass
+                    
+                    # Borrar los productos de la categoría
+                    cursor.execute("DELETE FROM productos WHERE categoria = ?", (cat_origen,))
+
+    finally:
+        # 2. Volver a activar la verificación de claves foráneas y cerrar la conexión
+        try:
+            conn.execute("PRAGMA foreign_keys = ON")
+        except Exception:
+            pass
+        conn.close()
