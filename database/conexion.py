@@ -101,6 +101,10 @@ def actualizar_variante_y_precios(var_id, talle, color, stock, costo, venta):
     conn = obtener_conexion()
     cursor = conn.cursor()
 
+    # Formateo
+    talle = talle.strip().upper()
+    color = color.strip().title()
+
     try:
         cursor.execute("SELECT producto_id FROM variantes WHERE id = ?", (var_id,))
         res = cursor.fetchone()
@@ -139,6 +143,11 @@ def agregar_producto_con_variante(nombre, categoria, costo, venta, talle, color,
     conn = obtener_conexion()
     cursor = conn.cursor()
 
+    # Formateo de datos
+    categoria = categoria.strip().title()
+    talle = talle.strip().upper()
+    color = color.strip().title()
+
     try:
         cursor.execute('''
             INSERT INTO productos (nombre, categoria, precio_costo, precio_venta)
@@ -164,6 +173,9 @@ def agregar_producto_con_matriz_variantes(nombre, categoria, costo, venta, lista
     conn = obtener_conexion()
     cursor = conn.cursor()
 
+    # Formateo de datos
+    categoria = categoria.strip().title()
+
     try:
         cursor.execute('''
             INSERT INTO productos (nombre, categoria, precio_costo, precio_venta)
@@ -175,10 +187,11 @@ def agregar_producto_con_matriz_variantes(nombre, categoria, costo, venta, lista
         datos_variantes = []
         for talle in lista_talles:
             for color in lista_colores:
-                t_clean = talle.strip()
-                c_clean = color.strip()
+                t_clean = talle.strip().upper()
+                c_clean = color.strip().title()
                 if t_clean and c_clean:
-                    stock_variante = dict_stock.get((t_clean, c_clean), 0)
+                    # Se busca la clave original o limpia
+                    stock_variante = dict_stock.get((talle, color), dict_stock.get((t_clean, c_clean), 0))
                     datos_variantes.append((producto_id, t_clean, c_clean, stock_variante))
 
         if datos_variantes:
@@ -315,6 +328,7 @@ def crear_tablas_caja():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             fecha_apertura DATETIME DEFAULT CURRENT_TIMESTAMP,
             fecha_cierre DATETIME,
+            turno TEXT,
             monto_inicial REAL NOT NULL,
             monto_final_teorico REAL,
             monto_final_real REAL,
@@ -323,6 +337,11 @@ def crear_tablas_caja():
             observaciones TEXT
         )
     ''')
+
+    try:
+        cursor.execute("ALTER TABLE cajas ADD COLUMN turno TEXT;")
+    except sqlite3.OperationalError:
+        pass
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS movimientos_caja (
@@ -361,30 +380,57 @@ def abrir_caja(monto_inicial):
     conn.close()
     return caja_id
 
+def abrir_caja_turno(turno, cambio_inicial):
+    if turno not in ["Mañana", "Tarde"]:
+        raise ValueError("El turno debe ser Mañana o Tarde.")
+        
+    conn = obtener_conexion()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO cajas (fecha_apertura, turno, monto_inicial, estado)
+        VALUES (DATETIME('now', 'localtime'), ?, ?, 'ABIERTA')
+    ''', (turno, cambio_inicial))
+    conn.commit()
+    conn.close()
+
+def modificar_fondo_inicial(caja_id, nuevo_monto):
+    conn = obtener_conexion()
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE cajas
+        SET monto_inicial = ?
+        WHERE id = ? AND estado = 'ABIERTA'
+    ''', (nuevo_monto, caja_id))
+    conn.commit()
+    conn.close()
+
 def registrar_movimiento_caja(caja_id, tipo, monto, concepto):
     conn = obtener_conexion()
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO movimientos_caja (caja_id, tipo, monto, concepto)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO movimientos_caja (caja_id, fecha, tipo, monto, concepto)
+        VALUES (?, DATETIME('now', 'localtime'), ?, ?, ?)
     ''', (caja_id, tipo, monto, concepto))
     conn.commit()
     conn.close()
 
 def obtener_resumen_caja_actual():
-    caja = obtener_caja_abierta()
-    if not caja:
-        return None
-
-    caja_id, fecha_apertura, monto_inicial = caja
-
+    crear_tablas_caja()
     conn = obtener_conexion()
     cursor = conn.cursor()
+    cursor.execute("SELECT id, fecha_apertura, monto_inicial, turno FROM cajas WHERE estado = 'ABIERTA' ORDER BY id DESC LIMIT 1")
+    caja = cursor.fetchone()
+    
+    if not caja:
+        conn.close()
+        return None
+
+    caja_id, fecha_apertura, monto_inicial, turno = caja
 
     cursor.execute('''
         SELECT metodo_pago, SUM(total) 
         FROM ventas 
-        WHERE fecha >= ? 
+        WHERE datetime(fecha) >= datetime(?) 
         GROUP BY metodo_pago
     ''', (fecha_apertura,))
     ventas_pago = dict(cursor.fetchall())
@@ -410,6 +456,7 @@ def obtener_resumen_caja_actual():
     return {
         "caja_id": caja_id,
         "fecha_apertura": fecha_apertura,
+        "turno": turno,
         "monto_inicial": monto_inicial,
         "ventas_efectivo": ventas_efectivo,
         "ingresos_extra": ingresos_extra,
@@ -418,62 +465,51 @@ def obtener_resumen_caja_actual():
         "total_recaudado": total_recaudado_general
     }
 
-def cerrar_caja(caja_id, monto_real_efectivo, observaciones=""):
-    resumen = obtener_resumen_caja_actual()
-    if not resumen or resumen["caja_id"] != caja_id:
-        raise ValueError("Error al identificar la caja activa.")
-
-    efectivo_esperado = resumen["efectivo_esperado"]
-    diferencia = monto_real_efectivo - efectivo_esperado
-
+def cerrar_caja(caja_id, monto_final_real, observaciones=""):
     conn = obtener_conexion()
     cursor = conn.cursor()
+    
+    resumen = obtener_resumen_caja_actual()
+    diferencia = monto_final_real - resumen['efectivo_esperado']
+    
     cursor.execute('''
-        UPDATE cajas
-        SET fecha_cierre = CURRENT_TIMESTAMP,
-            monto_final_teorico = ?,
+        UPDATE cajas 
+        SET fecha_cierre = DATETIME('now', 'localtime'),
             monto_final_real = ?,
+            monto_final_teorico = ?,
             diferencia = ?,
             estado = 'CERRADA',
             observaciones = ?
         WHERE id = ?
-    ''', (efectivo_esperado, monto_real_efectivo, diferencia, observaciones, caja_id))
-
+    ''', (monto_final_real, resumen['efectivo_esperado'], diferencia, observaciones, caja_id))
+    
     conn.commit()
     conn.close()
     return diferencia
 
 def eliminar_o_renombrar_categoria(cat_origen, cat_destino=None):
-    """
-    Renombra una categoría o la elimina junto con todos sus productos,
-    desactivando temporalmente las Foreign Keys para evitar bloqueos por integridad.
-    """
     conn = obtener_conexion()
     conn.execute("PRAGMA busy_timeout = 5000")
     
     try:
-        # 1. Desactivar temporalmente la verificación de claves foráneas
         conn.execute("PRAGMA foreign_keys = OFF")
         
         with conn:
             cursor = conn.cursor()
             
             if cat_destino:
-                # Caso 1: Renombrar / Unificar categoría (ej: "Jean" -> "JEAN")
+                cat_destino_clean = cat_destino.strip().title()
                 cursor.execute(
                     "UPDATE productos SET categoria = ? WHERE categoria = ?", 
-                    (cat_destino, cat_origen)
+                    (cat_destino_clean, cat_origen)
                 )
             else:
-                # Caso 2: Eliminar la categoría y todo su stock asociado
-                # Obtener los IDs de los productos a borrar
                 cursor.execute("SELECT id FROM productos WHERE categoria = ?", (cat_origen,))
                 ids_productos = [row[0] for row in cursor.fetchall()]
                 
                 if ids_productos:
                     placeholders = ','.join('?' for _ in ids_productos)
                     
-                    # Intentar borrar registros vinculados en tablas comunes si existen
                     tablas_posibles = ["ventas_detalle", "detalle_ventas", "movimientos_stock", "historial_stock"]
                     for tabla in tablas_posibles:
                         try:
@@ -481,11 +517,9 @@ def eliminar_o_renombrar_categoria(cat_origen, cat_destino=None):
                         except sqlite3.OperationalError:
                             pass
                     
-                    # Borrar los productos de la categoría
                     cursor.execute("DELETE FROM productos WHERE categoria = ?", (cat_origen,))
 
     finally:
-        # 2. Volver a activar la verificación de claves foráneas y cerrar la conexión
         try:
             conn.execute("PRAGMA foreign_keys = ON")
         except Exception:
