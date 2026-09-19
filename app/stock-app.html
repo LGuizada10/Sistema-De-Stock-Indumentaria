@@ -1,0 +1,1105 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zero Zed · Control de local</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#0A0C0A;
+    --paper-2:#0F1311;
+    --card:#141917;
+    --ink:#F3F6F1;
+    --ink-soft:#8FA99B;
+    --navy:#06120A;
+    --mustard:#3FE573;
+    --mustard-dark:#1FAE57;
+    --warn:#F2C94C;
+    --brick:#FF6161;
+    --green:#34D399;
+    --line:rgba(243,246,241,0.22);
+    --line-soft:rgba(243,246,241,0.10);
+    --font-display:'Space Grotesk', sans-serif;
+    --font-body:'IBM Plex Sans', sans-serif;
+    --font-mono:'IBM Plex Mono', monospace;
+    --shadow: 3px 4px 0 rgba(0,0,0,0.6);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#0A0C0A; --paper-2:#0F1311; --card:#141917; --ink:#F3F6F1; --ink-soft:#8FA99B;
+      --navy:#06120A; --mustard:#3FE573; --mustard-dark:#1FAE57; --warn:#F2C94C; --brick:#FF6161; --green:#34D399;
+      --line:rgba(243,246,241,0.22); --line-soft:rgba(243,246,241,0.10); --shadow:3px 4px 0 rgba(0,0,0,0.6);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#0A0C0A; --paper-2:#0F1311; --card:#141917; --ink:#F3F6F1; --ink-soft:#8FA99B;
+    --navy:#06120A; --mustard:#3FE573; --mustard-dark:#1FAE57; --warn:#F2C94C; --brick:#FF6161; --green:#34D399;
+    --line:rgba(243,246,241,0.22); --line-soft:rgba(243,246,241,0.10); --shadow:3px 4px 0 rgba(0,0,0,0.6);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--font-body);
+    -webkit-font-smoothing:antialiased;
+  }
+  #app{max-width:920px;margin:0 auto;padding:0 14px 60px;}
+  .hero{
+    padding:20px 4px 14px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    flex-wrap:wrap;
+    border-bottom:3px solid var(--ink);
+  }
+  .brand{display:flex;align-items:center;gap:12px;}
+  .brand img{height:46px;width:auto;border-radius:6px;}
+  .hero-title{
+    font-family:var(--font-display);
+    font-weight:700;
+    font-size:30px;
+    letter-spacing:0.2px;
+    line-height:1;
+    color:var(--ink);
+    margin:0;
+  }
+  .hero-sub{
+    font-size:12px;
+    color:var(--ink-soft);
+    margin-top:4px;
+  }
+  .status-tag{
+    position:relative;
+    background:var(--mustard);
+    color:var(--navy);
+    font-family:var(--font-mono);
+    font-weight:600;
+    font-size:12.5px;
+    padding:8px 14px 8px 22px;
+    clip-path: polygon(14px 0, 100% 0, 100% 100%, 14px 100%, 0 50%);
+    white-space:nowrap;
+  }
+  .status-tag.off{background:var(--line-soft);color:var(--ink-soft);}
+  .status-tag b{display:block;font-family:var(--font-display);font-weight:700;font-size:16px;letter-spacing:0.3px;}
+  .header-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .logout-link{background:none;border:none;color:var(--ink-soft);font-size:11.5px;text-decoration:underline;cursor:pointer;padding:0;}
+  nav.tabs{
+    display:flex;
+    gap:6px;
+    margin:16px 0 18px;
+    overflow-x:auto;
+    padding-bottom:2px;
+  }
+  nav.tabs button{
+    font-family:var(--font-display);
+    font-weight:700;
+    font-size:15px;
+    letter-spacing:0.2px;
+    background:var(--paper-2);
+    color:var(--ink-soft);
+    border:2px solid var(--ink);
+    border-bottom:none;
+    padding:8px 16px 7px;
+    cursor:pointer;
+    clip-path: polygon(10px 0, 100% 0, 100% 100%, 0 100%, 0 10px);
+    flex:0 0 auto;
+  }
+  nav.tabs button.active{
+    background:var(--card);
+    color:var(--ink);
+    position:relative;
+  }
+  nav.tabs button.active::after{
+    content:'';
+    position:absolute;
+    left:0;right:0;bottom:-3px;
+    height:3px;
+    background:var(--card);
+  }
+  main{
+    background:var(--card);
+    border:2px solid var(--ink);
+    border-radius:2px;
+    padding:18px 16px 22px;
+    position:relative;
+  }
+  h2.section-title{
+    font-family:var(--font-display);
+    font-weight:700;
+    font-size:23px;
+    letter-spacing:0.2px;
+    margin:0 0 4px;
+  }
+  .section-note{color:var(--ink-soft);font-size:12.5px;margin:0 0 16px;}
+  .card{
+    background:var(--paper);
+    border:1.5px dashed var(--line);
+    border-radius:2px;
+    padding:14px;
+    margin-bottom:12px;
+  }
+  .card-title{font-weight:600;font-size:15px;margin:0 0 8px;display:flex;justify-content:space-between;align-items:center;gap:8px;}
+  .row{display:flex;gap:10px;flex-wrap:wrap;}
+  .field{display:flex;flex-direction:column;gap:4px;margin-bottom:10px;flex:1 1 140px;}
+  .field label{font-size:11.5px;color:var(--ink-soft);font-weight:600;}
+  input, select, textarea{
+    font-family:var(--font-body);
+    font-size:14.5px;
+    padding:8px 9px;
+    border:1.5px solid var(--line);
+    border-radius:2px;
+    background:var(--card);
+    color:var(--ink);
+    width:100%;
+  }
+  input:focus, select:focus, textarea:focus{outline:2px solid var(--mustard);outline-offset:1px;}
+  button.btn{
+    font-family:var(--font-body);
+    font-weight:600;
+    font-size:14px;
+    padding:9px 16px;
+    border:2px solid var(--ink);
+    background:var(--ink);
+    color:var(--paper);
+    border-radius:2px;
+    cursor:pointer;
+  }
+  button.btn:disabled{opacity:0.4;cursor:not-allowed;}
+  button.btn.primary{background:var(--mustard);border-color:var(--mustard-dark);color:var(--navy);}
+  button.btn.ghost{background:transparent;color:var(--ink);}
+  button.btn.danger{background:transparent;border-color:var(--brick);color:var(--brick);}
+  button.btn.small{padding:5px 10px;font-size:12.5px;}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  table th{text-align:left;font-size:11px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.4px;padding:5px 6px;border-bottom:2px solid var(--ink);}
+  table td{padding:7px 6px;border-bottom:1px solid var(--line-soft);}
+  .num{font-family:var(--font-mono);}
+  .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;font-family:var(--font-mono);}
+  .pill.ok{background:var(--green);color:var(--navy);}
+  .pill.low{background:var(--brick);color:#1a0202;}
+  .pill.mid{background:var(--warn);color:var(--navy);}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  @media (max-width:600px){.grid2{grid-template-columns:1fr;}}
+  .totalline{display:flex;justify-content:space-between;font-size:14px;padding:4px 0;}
+  .totalline.big{font-family:var(--font-display);font-weight:700;font-size:22px;border-top:2px solid var(--ink);margin-top:6px;padding-top:8px;}
+  .muted{color:var(--ink-soft);}
+  .empty{color:var(--ink-soft);font-style:italic;font-size:13.5px;padding:10px 0;}
+  .toast{
+    position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
+    background:var(--mustard);color:var(--navy);padding:10px 18px;border-radius:3px;
+    font-size:13.5px;font-weight:700;z-index:50;box-shadow:var(--shadow);
+    opacity:0;pointer-events:none;transition:opacity .25s;
+  }
+  .toast.show{opacity:1;}
+  .variant-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px dashed var(--line-soft);font-size:13.5px;flex-wrap:wrap;}
+  .variant-row .vlabel{flex:1 1 auto;min-width:90px;}
+  .stepper{display:flex;align-items:center;gap:6px;}
+  .stepper button{width:24px;height:24px;border:1.5px solid var(--ink);background:var(--card);color:var(--ink);border-radius:2px;cursor:pointer;font-weight:700;line-height:1;}
+  .link-btn{background:none;border:none;color:var(--brick);cursor:pointer;font-size:12px;font-weight:600;padding:0;text-decoration:underline;}
+  hr.stitch{border:none;border-top:1.5px dashed var(--line);margin:16px 0;}
+  .top-summary{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;}
+  .stat{background:var(--paper);border:1.5px solid var(--line);border-radius:2px;padding:8px 12px;min-width:110px;}
+  .stat .v{font-family:var(--font-mono);font-size:18px;font-weight:600;}
+  .stat .l{font-size:11px;color:var(--ink-soft);}
+  .cat-heading{font-family:var(--font-display);font-weight:700;font-size:18px;margin:18px 0 8px;letter-spacing:0.2px;}
+  .cat-heading:first-child{margin-top:0;}
+  .cat-chip{display:inline-flex;align-items:center;gap:6px;background:var(--paper);border:1.5px solid var(--line);border-radius:20px;padding:4px 6px 4px 12px;font-size:12.5px;margin:0 6px 6px 0;}
+  .cat-chip button{background:none;border:none;color:var(--brick);cursor:pointer;font-size:14px;line-height:1;padding:0 4px;}
+  .login-wrap{display:flex;justify-content:center;padding:40px 10px;}
+  .login-card{background:var(--card);border:2px solid var(--ink);border-radius:2px;padding:26px 24px;max-width:340px;width:100%;text-align:center;}
+  .role-btn{display:block;width:100%;margin-bottom:10px;}
+  .prod-desc{font-size:12px;color:var(--ink-soft);margin-top:-2px;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="hero">
+    <div class="brand">
+      <img src="data:image/png;base64,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" alt="Zero Zed">
+      <div>
+        <p class="hero-title" id="storeName">ZERO ZED</p>
+        <p class="hero-sub" id="dateLine"></p>
+      </div>
+    </div>
+    <div class="header-right">
+      <div id="statusTag"></div>
+      <button class="logout-link" id="logoutBtn" onclick="cerrarSesion()" style="display:none;">Salir</button>
+    </div>
+  </div>
+  <nav class="tabs" id="tabsNav"></nav>
+  <main id="content"></main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------- estado ---------- */
+const STORAGE_KEY = 'controlLocal_zerozed_v1';
+const DEFAULT_CATEGORIAS = ["Pantalones","Jeans","Shorts","Medias","Cadenitas","Pulseras","Bolsos/Riñoneras","Gorras","Otros"];
+const METODOS = ["Efectivo","Mercado Pago","Débito","Crédito"];
+const LOW_STOCK = 3;
+
+function defaultState(){
+  return {
+    config:{
+      nombreLocal:"Zero Zed",
+      debitoPct:10, creditoPct:20,
+      categorias: DEFAULT_CATEGORIAS.slice(),
+      pins: { admin:"1234", empleado:"0000" }
+    },
+    productos: [],
+    ventas: [],
+    turnos: [],
+    compras: []
+  };
+}
+let state;
+try{
+  const raw = localStorage.getItem(STORAGE_KEY);
+  state = raw ? JSON.parse(raw) : defaultState();
+  if(!state.config.categorias) state.config.categorias = DEFAULT_CATEGORIAS.slice();
+  if(!state.config.pins) state.config.pins = { admin:"1234", empleado:"0000" };
+}catch(e){ state = defaultState(); }
+
+function save(){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){ console.error('No se pudo guardar', e); }
+}
+
+/* ---------- sesión / roles ---------- */
+let session = null;
+try{ session = sessionStorage.getItem('zz_session') || null; }catch(e){ session = null; }
+let loginRoleSel = null;
+let loginPin = '';
+let loginError = '';
+
+function iniciarSesion(){
+  const pinCorrecto = state.config.pins[loginRoleSel];
+  if(loginPin === pinCorrecto){
+    session = loginRoleSel;
+    try{ sessionStorage.setItem('zz_session', session); }catch(e){}
+    loginRoleSel = null; loginPin=''; loginError='';
+    if(session==='empleado' && (currentTab==='compras' || currentTab==='ajustes')) currentTab='vender';
+    renderAll();
+  }else{
+    loginError = 'PIN incorrecto';
+    renderAll();
+  }
+}
+function cerrarSesion(){
+  session = null;
+  try{ sessionStorage.removeItem('zz_session'); }catch(e){}
+  currentTab='vender';
+  renderAll();
+}
+
+/* ---------- utilidades ---------- */
+function uid(){ return 'id'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function money(n){ n = Number(n)||0; return '$' + n.toLocaleString('es-AR',{minimumFractionDigits:0, maximumFractionDigits:0}); }
+function todayStr(){ const d=new Date(); return d.toISOString().slice(0,10); }
+function timeStr(){ const d=new Date(); return d.toTimeString().slice(0,5); }
+function fmtDate(s){ const [y,m,d]=s.split('-'); return d+'/'+m+'/'+y; }
+function sugerirTurno(){ const h = new Date().getHours(); return h < 15 ? 'Mañana' : 'Tarde'; }
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(window._toastTimer);
+  window._toastTimer = setTimeout(()=>t.classList.remove('show'), 2200);
+}
+function turnoAbierto(){ return state.turnos.find(t=>t.abierto); }
+function ventasDe(fecha){ return state.ventas.filter(v=>v.fecha===fecha); }
+
+/* ---------- navegación ---------- */
+let currentTab = 'vender';
+const ALL_TABS = [
+  {id:'vender', label:'Vender', roles:['admin','empleado']},
+  {id:'stock', label:'Stock', roles:['admin','empleado']},
+  {id:'turno', label:'Turno', roles:['admin','empleado']},
+  {id:'historial', label:'Historial', roles:['admin','empleado']},
+  {id:'compras', label:'Compras', roles:['admin']},
+  {id:'ajustes', label:'Ajustes', roles:['admin']}
+];
+function tabsPermitidas(){ return ALL_TABS.filter(t=>t.roles.includes(session)); }
+function renderNav(){
+  const nav = document.getElementById('tabsNav');
+  if(!session){ nav.innerHTML=''; return; }
+  nav.innerHTML = tabsPermitidas().map(t=>`<button class="${t.id===currentTab?'active':''}" onclick="goTab('${t.id}')">${t.label}</button>`).join('');
+}
+function goTab(id){ currentTab = id; renderAll(); }
+
+function renderHeader(){
+  document.getElementById('storeName').textContent = (state.config.nombreLocal || 'Zero Zed').toUpperCase();
+  const hoy = todayStr();
+  document.getElementById('dateLine').textContent = session ? (fmtDate(hoy) + ' · ' + ventasDe(hoy).length + ' venta(s) hoy · total ' + money(ventasDe(hoy).reduce((a,v)=>a+v.total,0))) : 'Control de stock y ventas';
+  const t = turnoAbierto();
+  const tag = document.getElementById('statusTag');
+  const logoutBtn = document.getElementById('logoutBtn');
+  if(!session){ tag.innerHTML=''; logoutBtn.style.display='none'; return; }
+  logoutBtn.style.display='inline';
+  logoutBtn.textContent = 'Salir (' + (session==='admin'?'Admin':'Empleado') + ')';
+  if(t){
+    tag.className='status-tag';
+    tag.innerHTML = `<span>Turno abierto</span><b>${t.turno}</b>`;
+  }else{
+    tag.className='status-tag off';
+    tag.innerHTML = `<span>Sin turno</span><b>Cerrado</b>`;
+  }
+}
+
+function renderAll(){
+  renderHeader();
+  renderNav();
+  const c = document.getElementById('content');
+  if(!session){ c.innerHTML = renderLogin(); afterRenderHooks(); return; }
+  const permitido = tabsPermitidas().some(t=>t.id===currentTab);
+  if(!permitido) currentTab = 'vender';
+  if(currentTab==='vender') c.innerHTML = renderVender();
+  else if(currentTab==='stock') c.innerHTML = renderStock();
+  else if(currentTab==='turno') c.innerHTML = renderTurno();
+  else if(currentTab==='historial') c.innerHTML = renderHistorial();
+  else if(currentTab==='compras') c.innerHTML = renderCompras();
+  else if(currentTab==='ajustes') c.innerHTML = renderAjustes();
+  afterRenderHooks();
+}
+
+/* =================== LOGIN =================== */
+function renderLogin(){
+  if(!loginRoleSel){
+    return `
+    <div class="login-wrap">
+      <div class="login-card">
+        <h2 class="section-title" style="margin-bottom:14px;">Entrar</h2>
+        <button class="btn primary role-btn" onclick="loginRoleSel='admin'; loginError=''; renderAll();">Admin</button>
+        <button class="btn ghost role-btn" onclick="loginRoleSel='empleado'; loginError=''; renderAll();">Empleado</button>
+      </div>
+    </div>`;
+  }
+  return `
+  <div class="login-wrap">
+    <div class="login-card">
+      <h2 class="section-title" style="margin-bottom:4px;">${loginRoleSel==='admin'?'Admin':'Empleado'}</h2>
+      <p class="section-note">Ingresá el PIN para continuar.</p>
+      <div class="field">
+        <input type="password" inputmode="numeric" placeholder="PIN" value="${loginPin}" oninput="loginPin=this.value" onkeydown="if(event.key==='Enter') iniciarSesion();" autofocus>
+      </div>
+      ${loginError ? `<p style="color:var(--brick);font-size:12.5px;margin:-4px 0 10px;">${loginError}</p>` : ''}
+      <button class="btn primary role-btn" onclick="iniciarSesion()">Ingresar</button>
+      <button class="btn ghost role-btn" onclick="loginRoleSel=null; loginPin=''; renderAll();">Volver</button>
+    </div>
+  </div>`;
+}
+
+/* =================== VENDER =================== */
+let cart = [];
+let ventaSelCat = '', ventaSelProd = '', ventaSelVar = '', ventaSelQty = 1, ventaMetodo = 'Efectivo';
+
+function renderVender(){
+  const t = turnoAbierto();
+  if(!t){
+    return `
+      <h2 class="section-title">Vender</h2>
+      <p class="section-note">Para registrar ventas primero tenés que abrir un turno.</p>
+      <div class="card">
+        <p style="margin:0 0 10px;">No hay ningún turno abierto ahora mismo.</p>
+        <button class="btn primary" onclick="goTab('turno')">Ir a abrir turno</button>
+      </div>`;
+  }
+
+  const categorias = state.config.categorias;
+  const productos = state.productos;
+  const prodsFiltrados = ventaSelCat ? productos.filter(p=>p.categoria===ventaSelCat) : productos;
+  const prodSel = productos.find(p=>p.id===ventaSelProd);
+  const variantes = prodSel ? prodSel.variantes : [];
+  const varSel = prodSel ? variantes.find(v=>v.id===ventaSelVar) : null;
+
+  const subtotal = cart.reduce((a,i)=>a+i.cantidad*i.precioUnit,0);
+  const pct = ventaMetodo==='Débito' ? state.config.debitoPct : ventaMetodo==='Crédito' ? state.config.creditoPct : 0;
+  const recargo = Math.round(subtotal*pct/100);
+  const total = subtotal + recargo;
+
+  return `
+  <h2 class="section-title">Vender</h2>
+  <p class="section-note">Turno ${t.turno} en curso · agregá productos a la venta y elegí cómo paga.</p>
+
+  <div class="card">
+    <div class="card-title">Agregar producto</div>
+    <div class="row">
+      <div class="field">
+        <label>Categoría</label>
+        <select onchange="ventaSelCat=this.value; ventaSelProd=''; ventaSelVar=''; renderAll();">
+          <option value="">Todas</option>
+          ${categorias.map(c=>`<option value="${c}" ${ventaSelCat===c?'selected':''}>${c}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field" style="flex:2 1 220px;">
+        <label>Producto</label>
+        <select onchange="ventaSelProd=this.value; ventaSelVar=''; renderAll();">
+          <option value="">Elegí un producto</option>
+          ${prodsFiltrados.map(p=>`<option value="${p.id}" ${ventaSelProd===p.id?'selected':''}>${p.nombre}${p.descripcion?(' — '+p.descripcion):''}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field">
+        <label>Talle / color</label>
+        <select onchange="ventaSelVar=this.value; renderAll();" ${!prodSel?'disabled':''}>
+          <option value="">Elegí variante</option>
+          ${variantes.map(v=>`<option value="${v.id}" ${ventaSelVar===v.id?'selected':''} ${v.stock<=0?'disabled':''}>${v.talle} ${v.color} (stock ${v.stock})</option>`).join('')}
+        </select>
+      </div>
+      <div class="field" style="max-width:90px;">
+        <label>Cant.</label>
+        <input type="number" min="1" value="${ventaSelQty}" onchange="ventaSelQty=parseInt(this.value)||1; renderAll();">
+      </div>
+    </div>
+    <button class="btn primary" ${(!prodSel||!varSel)?'disabled':''} onclick="agregarAlCarrito()">+ Agregar a la venta</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Venta actual</div>
+    ${cart.length===0 ? '<p class="empty">Todavía no agregaste productos.</p>' : `
+    <table>
+      <thead><tr><th>Producto</th><th>Variante</th><th>Cant.</th><th>P. unit.</th><th>Subtotal</th><th></th></tr></thead>
+      <tbody>
+        ${cart.map((i,idx)=>`
+          <tr>
+            <td>${i.nombre}</td>
+            <td>${i.varianteLabel}</td>
+            <td class="num">${i.cantidad}</td>
+            <td class="num">${money(i.precioUnit)}</td>
+            <td class="num">${money(i.cantidad*i.precioUnit)}</td>
+            <td><button class="link-btn" onclick="quitarDelCarrito(${idx})">quitar</button></td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`}
+
+    <hr class="stitch">
+    <div class="field" style="max-width:240px;">
+      <label>Método de pago</label>
+      <select onchange="ventaMetodo=this.value; renderAll();">
+        ${METODOS.map(m=>`<option value="${m}" ${ventaMetodo===m?'selected':''}>${m}${(m==='Débito'||m==='Crédito') ? ' (+' + (m==='Débito'?state.config.debitoPct:state.config.creditoPct) + '%)' : ''}</option>`).join('')}
+      </select>
+    </div>
+    <div class="totalline"><span class="muted">Subtotal</span><span class="num">${money(subtotal)}</span></div>
+    ${pct>0 ? `<div class="totalline"><span class="muted">Recargo ${ventaMetodo} (${pct}%)</span><span class="num">${money(recargo)}</span></div>` : ''}
+    <div class="totalline big"><span>Total</span><span class="num">${money(total)}</span></div>
+    <div style="margin-top:10px;display:flex;gap:8px;">
+      <button class="btn primary" ${cart.length===0?'disabled':''} onclick="confirmarVenta()">Confirmar venta</button>
+      <button class="btn ghost" ${cart.length===0?'disabled':''} onclick="cart=[]; renderAll();">Vaciar</button>
+    </div>
+  </div>
+  `;
+}
+
+function agregarAlCarrito(){
+  const p = state.productos.find(p=>p.id===ventaSelProd);
+  if(!p) return;
+  const v = p.variantes.find(v=>v.id===ventaSelVar);
+  if(!v) return;
+  const qty = Math.max(1, ventaSelQty||1);
+  const yaEnCarrito = cart.filter(i=>i.varianteId===v.id).reduce((a,i)=>a+i.cantidad,0);
+  if(yaEnCarrito + qty > v.stock){
+    showToast('No hay stock suficiente (quedan '+v.stock+')');
+    return;
+  }
+  cart.push({
+    productoId:p.id, nombre:p.nombre + (p.descripcion?(' ('+p.descripcion+')'):''), categoria:p.categoria,
+    varianteId:v.id, varianteLabel:[v.talle,v.color].filter(x=>x&&x!=='-').join(' / ')||'Único',
+    cantidad:qty, precioUnit:p.precio
+  });
+  ventaSelQty = 1;
+  renderAll();
+}
+function quitarDelCarrito(idx){ cart.splice(idx,1); renderAll(); }
+
+function confirmarVenta(){
+  const t = turnoAbierto();
+  if(!t || cart.length===0) return;
+  const subtotal = cart.reduce((a,i)=>a+i.cantidad*i.precioUnit,0);
+  const pct = ventaMetodo==='Débito' ? state.config.debitoPct : ventaMetodo==='Crédito' ? state.config.creditoPct : 0;
+  const recargo = Math.round(subtotal*pct/100);
+  const total = subtotal + recargo;
+
+  for(const item of cart){
+    const p = state.productos.find(p=>p.id===item.productoId);
+    const v = p.variantes.find(v=>v.id===item.varianteId);
+    v.stock = Math.max(0, v.stock - item.cantidad);
+  }
+
+  state.ventas.push({
+    id: uid(), fecha: todayStr(), hora: timeStr(), turnoId: t.id,
+    items: cart.map(i=>({...i})), metodoPago: ventaMetodo,
+    subtotal, recargoPct: pct, total
+  });
+  save();
+  cart = [];
+  showToast('Venta registrada · ' + money(total));
+  renderAll();
+}
+
+/* =================== STOCK =================== */
+let showNuevoProducto = false;
+let nuevoProd = {nombre:'', descripcion:'', categoria:'', costo:'', precio:''};
+let addVarianteFormFor = null;
+let nuevaVariante = {talle:'', color:'', stock:''};
+
+function renderStock(){
+  const categorias = state.config.categorias;
+  if(!nuevoProd.categoria) nuevoProd.categoria = categorias[0] || '';
+  const porCategoria = {};
+  categorias.forEach(c=>porCategoria[c]=[]);
+  const sinCategoria = [];
+  state.productos.forEach(p=>{
+    if(porCategoria[p.categoria]) porCategoria[p.categoria].push(p);
+    else sinCategoria.push(p);
+  });
+
+  return `
+  <h2 class="section-title">Stock</h2>
+  <p class="section-note">Tus productos, talles/colores y cantidades disponibles.</p>
+
+  <button class="btn primary" onclick="showNuevoProducto=!showNuevoProducto; renderAll();">${showNuevoProducto?'Cancelar':'+ Nuevo producto'}</button>
+
+  ${showNuevoProducto ? `
+  <div class="card" style="margin-top:12px;">
+    <div class="card-title">Nuevo producto</div>
+    <div class="row">
+      <div class="field" style="flex:2 1 200px;">
+        <label>Nombre</label>
+        <input type="text" placeholder="Ej: Jean recto azul" value="${nuevoProd.nombre}" oninput="nuevoProd.nombre=this.value">
+      </div>
+      <div class="field">
+        <label>Categoría</label>
+        <select onchange="nuevoProd.categoria=this.value">
+          ${categorias.map(c=>`<option value="${c}" ${nuevoProd.categoria===c?'selected':''}>${c}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field" style="flex:2 1 200px;">
+        <label>Descripción / diseño (opcional)</label>
+        <input type="text" placeholder="Ej: bolsillo cargo, estampa frontal..." value="${nuevoProd.descripcion}" oninput="nuevoProd.descripcion=this.value">
+      </div>
+      <div class="field">
+        <label>Costo unitario</label>
+        <input type="number" min="0" placeholder="0" value="${nuevoProd.costo}" oninput="nuevoProd.costo=this.value">
+      </div>
+      <div class="field">
+        <label>Precio de venta</label>
+        <input type="number" min="0" placeholder="0" value="${nuevoProd.precio}" oninput="nuevoProd.precio=this.value">
+      </div>
+    </div>
+    <p class="section-note" style="margin:-4px 0 10px;">Usá la descripción para diferenciar productos parecidos: mismo color, distinto diseño o estampa.</p>
+    <button class="btn primary" onclick="crearProducto()">Guardar producto</button>
+  </div>` : ''}
+
+  <hr class="stitch">
+
+  ${categorias.map(cat=>{
+    const items = porCategoria[cat];
+    if(!items.length) return '';
+    return `<div class="cat-heading">${cat}</div>` + items.map(p=>renderProductoCard(p)).join('');
+  }).join('')}
+  ${sinCategoria.length ? `<div class="cat-heading">Sin categoría</div>` + sinCategoria.map(p=>renderProductoCard(p)).join('') : ''}
+  ${(state.productos.length===0) ? '<p class="empty">Todavía no cargaste productos.</p>' : ''}
+  `;
+}
+
+function renderProductoCard(p){
+  const totalStock = p.variantes.reduce((a,v)=>a+v.stock,0);
+  return `
+  <div class="card">
+    <div class="card-title">
+      <span>${p.nombre} <span class="muted num" style="font-size:12px;">· costo ${money(p.costo)} · venta ${money(p.precio)}</span></span>
+      <span class="pill ${totalStock<=0?'low':totalStock<=LOW_STOCK?'mid':'ok'}">${totalStock} en stock</span>
+    </div>
+    ${p.descripcion ? `<div class="prod-desc">${p.descripcion}</div>` : ''}
+    ${p.variantes.length===0 ? '<p class="empty">Sin variantes cargadas todavía.</p>' : p.variantes.map(v=>`
+      <div class="variant-row">
+        <span class="vlabel">${v.talle||'-'} ${v.color?('· '+v.color):''}</span>
+        <span class="pill ${v.stock<=0?'low':v.stock<=LOW_STOCK?'mid':'ok'}">${v.stock}</span>
+        <div class="stepper">
+          <button onclick="ajustarStock('${p.id}','${v.id}',-1)">−</button>
+          <button onclick="ajustarStock('${p.id}','${v.id}',1)">+</button>
+        </div>
+        <button class="link-btn" onclick="eliminarVariante('${p.id}','${v.id}')">quitar</button>
+      </div>
+    `).join('')}
+    <div class="row" style="margin-top:10px;">
+      ${addVarianteFormFor===p.id ? `
+        <div class="field" style="flex:1 1 90px;"><label>Talle</label><input type="text" value="${nuevaVariante.talle}" oninput="nuevaVariante.talle=this.value" placeholder="S, M, 40..."></div>
+        <div class="field" style="flex:1 1 90px;"><label>Color</label><input type="text" value="${nuevaVariante.color}" oninput="nuevaVariante.color=this.value" placeholder="Negro..."></div>
+        <div class="field" style="flex:1 1 70px;"><label>Stock</label><input type="number" min="0" value="${nuevaVariante.stock}" oninput="nuevaVariante.stock=this.value"></div>
+        <div class="field" style="flex:0 0 auto;justify-content:flex-end;">
+          <button class="btn small primary" onclick="guardarVariante('${p.id}')">Agregar</button>
+        </div>
+      ` : `<button class="btn small ghost" onclick="addVarianteFormFor='${p.id}'; nuevaVariante={talle:'',color:'',stock:''}; renderAll();">+ Talle/color</button>
+      <button class="btn small danger" onclick="eliminarProducto('${p.id}')">Eliminar producto</button>`}
+    </div>
+  </div>`;
+}
+
+function crearProducto(){
+  if(!nuevoProd.nombre.trim()){ showToast('Ponele un nombre al producto'); return; }
+  state.productos.push({
+    id: uid(), nombre: nuevoProd.nombre.trim(), descripcion: nuevoProd.descripcion.trim(),
+    categoria: nuevoProd.categoria, costo: Number(nuevoProd.costo)||0, precio: Number(nuevoProd.precio)||0, variantes: []
+  });
+  save();
+  nuevoProd = {nombre:'', descripcion:'', categoria: state.config.categorias[0]||'', costo:'', precio:''};
+  showNuevoProducto = false;
+  showToast('Producto creado');
+  renderAll();
+}
+function eliminarProducto(id){
+  if(!confirm('¿Eliminar este producto y todas sus variantes?')) return;
+  state.productos = state.productos.filter(p=>p.id!==id);
+  save(); renderAll();
+}
+function guardarVariante(prodId){
+  const p = state.productos.find(p=>p.id===prodId);
+  if(!p) return;
+  p.variantes.push({id:uid(), talle:nuevaVariante.talle.trim()||'Único', color:nuevaVariante.color.trim(), stock:Number(nuevaVariante.stock)||0});
+  save();
+  addVarianteFormFor = null;
+  renderAll();
+}
+function eliminarVariante(prodId,varId){
+  const p = state.productos.find(p=>p.id===prodId);
+  if(!p) return;
+  p.variantes = p.variantes.filter(v=>v.id!==varId);
+  save(); renderAll();
+}
+function ajustarStock(prodId,varId,delta){
+  const p = state.productos.find(p=>p.id===prodId);
+  const v = p.variantes.find(v=>v.id===varId);
+  v.stock = Math.max(0, v.stock+delta);
+  save(); renderAll();
+}
+
+/* =================== TURNO =================== */
+let nuevoTurno = {turno: sugerirTurno(), cambioInicial:''};
+let nuevoGasto = {desc:'', monto:''};
+let cerrandoTurno = false;
+let cambioFinalInput = '';
+
+function renderTurno(){
+  const t = turnoAbierto();
+  const cerrados = state.turnos.filter(t=>!t.abierto).sort((a,b)=> (b.fecha+b.horaApertura).localeCompare(a.fecha+a.horaApertura)).slice(0,6);
+
+  if(!t){
+    return `
+    <h2 class="section-title">Turno</h2>
+    <p class="section-note">Abrí el turno indicando con cuánto cambio empezás la caja.</p>
+    <div class="card">
+      <div class="row">
+        <div class="field">
+          <label>Turno</label>
+          <select onchange="nuevoTurno.turno=this.value">
+            <option ${nuevoTurno.turno==='Mañana'?'selected':''}>Mañana</option>
+            <option ${nuevoTurno.turno==='Tarde'?'selected':''}>Tarde</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Cambio inicial</label>
+          <input type="number" min="0" placeholder="0" value="${nuevoTurno.cambioInicial}" oninput="nuevoTurno.cambioInicial=this.value">
+        </div>
+      </div>
+      <button class="btn primary" onclick="abrirTurno()">Abrir turno</button>
+    </div>
+    ${renderTurnosCerrados(cerrados)}
+    `;
+  }
+
+  const ventasTurno = state.ventas.filter(v=>v.turnoId===t.id);
+  const porMetodo = {};
+  METODOS.forEach(m=>porMetodo[m]=0);
+  ventasTurno.forEach(v=>porMetodo[v.metodoPago]+=v.total);
+  const totalGastos = t.gastos.reduce((a,g)=>a+g.monto,0);
+  const efectivoEsperado = Number(t.cambioInicial) + porMetodo['Efectivo'] - totalGastos;
+
+  return `
+  <h2 class="section-title">Turno ${t.turno}</h2>
+  <p class="section-note">Abierto a las ${t.horaApertura} · cambio inicial ${money(t.cambioInicial)}</p>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-title">Ventas del turno</div>
+      ${METODOS.map(m=>`<div class="totalline"><span class="muted">${m}</span><span class="num">${money(porMetodo[m])}</span></div>`).join('')}
+      <div class="totalline big"><span>Total</span><span class="num">${money(ventasTurno.reduce((a,v)=>a+v.total,0))}</span></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Efectivo en caja</div>
+      <div class="totalline"><span class="muted">Cambio inicial</span><span class="num">${money(t.cambioInicial)}</span></div>
+      <div class="totalline"><span class="muted">+ Ventas efectivo</span><span class="num">${money(porMetodo['Efectivo'])}</span></div>
+      <div class="totalline"><span class="muted">− Gastos</span><span class="num">${money(totalGastos)}</span></div>
+      <div class="totalline big"><span>Esperado</span><span class="num">${money(efectivoEsperado)}</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Gastos del turno <span class="muted" style="font-weight:400;font-size:12px;">(compras chicas, viáticos, etc.)</span></div>
+    ${t.gastos.length===0 ? '<p class="empty">Sin gastos registrados.</p>' : `
+    <table><thead><tr><th>Hora</th><th>Descripción</th><th>Monto</th><th></th></tr></thead>
+    <tbody>${t.gastos.map((g,idx)=>`<tr><td>${g.hora}</td><td>${g.desc}</td><td class="num">${money(g.monto)}</td><td><button class="link-btn" onclick="quitarGasto('${t.id}',${idx})">quitar</button></td></tr>`).join('')}</tbody></table>`}
+    <div class="row" style="margin-top:8px;">
+      <div class="field" style="flex:2 1 160px;"><label>Descripción</label><input type="text" placeholder="Ej: galletitas" value="${nuevoGasto.desc}" oninput="nuevoGasto.desc=this.value"></div>
+      <div class="field" style="flex:1 1 100px;"><label>Monto</label><input type="number" min="0" placeholder="0" value="${nuevoGasto.monto}" oninput="nuevoGasto.monto=this.value"></div>
+      <div class="field" style="flex:0 0 auto;justify-content:flex-end;"><button class="btn small primary" onclick="agregarGasto('${t.id}')">Agregar gasto</button></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Cerrar turno</div>
+    ${!cerrandoTurno ? `<button class="btn danger" onclick="cerrandoTurno=true; renderAll();">Cerrar turno</button>` : `
+    <p class="section-note">Contá la caja y anotá cuánto efectivo hay realmente.</p>
+    <div class="row">
+      <div class="field" style="max-width:160px;"><label>Efectivo contado</label><input type="number" min="0" value="${cambioFinalInput}" oninput="cambioFinalInput=this.value"></div>
+    </div>
+    <p class="section-note">Esperado: ${money(efectivoEsperado)} ${cambioFinalInput!=='' ? '· Diferencia: ' + money(Number(cambioFinalInput)-efectivoEsperado) : ''}</p>
+    <button class="btn primary" onclick="cerrarTurno('${t.id}', ${efectivoEsperado})">Confirmar cierre</button>
+    <button class="btn ghost" onclick="cerrandoTurno=false; renderAll();">Cancelar</button>
+    `}
+  </div>
+
+  ${renderTurnosCerrados(cerrados)}
+  `;
+}
+
+function renderTurnosCerrados(cerrados){
+  if(!cerrados.length) return '';
+  return `
+  <hr class="stitch">
+  <h3 style="font-family:var(--font-display);font-weight:700;font-size:18px;margin:0 0 8px;">Turnos anteriores</h3>
+  <table>
+    <thead><tr><th>Fecha</th><th>Turno</th><th>Inicial</th><th>Contado</th><th>Diferencia</th><th>Gastos</th></tr></thead>
+    <tbody>
+      ${cerrados.map(t=>{
+        const gastos = t.gastos.reduce((a,g)=>a+g.monto,0);
+        const diff = (t.cambioFinal ?? 0) - (t.efectivoEsperado ?? 0);
+        return `<tr>
+          <td>${fmtDate(t.fecha)}</td><td>${t.turno}</td>
+          <td class="num">${money(t.cambioInicial)}</td>
+          <td class="num">${money(t.cambioFinal)}</td>
+          <td class="num" style="color:${diff<0?'var(--brick)':diff>0?'var(--green)':'inherit'}">${money(diff)}</td>
+          <td class="num">${money(gastos)}</td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>`;
+}
+
+function abrirTurno(){
+  if(turnoAbierto()){ showToast('Ya hay un turno abierto'); return; }
+  state.turnos.push({
+    id: uid(), fecha: todayStr(), turno: nuevoTurno.turno,
+    cambioInicial: Number(nuevoTurno.cambioInicial)||0, cambioFinal:null,
+    gastos: [], abierto:true, horaApertura: timeStr(), horaCierre:null, efectivoEsperado:null
+  });
+  save();
+  nuevoTurno = {turno: sugerirTurno(), cambioInicial:''};
+  showToast('Turno abierto');
+  renderAll();
+}
+function agregarGasto(turnoId){
+  if(!nuevoGasto.desc.trim() || !nuevoGasto.monto){ showToast('Completá descripción y monto'); return; }
+  const t = state.turnos.find(t=>t.id===turnoId);
+  t.gastos.push({desc:nuevoGasto.desc.trim(), monto:Number(nuevoGasto.monto)||0, hora:timeStr()});
+  save();
+  nuevoGasto = {desc:'', monto:''};
+  renderAll();
+}
+function quitarGasto(turnoId, idx){
+  const t = state.turnos.find(t=>t.id===turnoId);
+  t.gastos.splice(idx,1);
+  save(); renderAll();
+}
+function cerrarTurno(turnoId, esperado){
+  const t = state.turnos.find(t=>t.id===turnoId);
+  t.abierto = false;
+  t.cambioFinal = Number(cambioFinalInput)||0;
+  t.efectivoEsperado = esperado;
+  t.horaCierre = timeStr();
+  save();
+  cerrandoTurno = false; cambioFinalInput='';
+  showToast('Turno cerrado');
+  renderAll();
+}
+
+/* =================== HISTORIAL =================== */
+let historialFecha = todayStr();
+
+function renderHistorial(){
+  const ventas = ventasDe(historialFecha);
+  const turnosDia = state.turnos.filter(t=>t.fecha===historialFecha);
+  const porMetodo = {}; METODOS.forEach(m=>porMetodo[m]=0);
+  ventas.forEach(v=>porMetodo[v.metodoPago]+=v.total);
+
+  const ranking = {};
+  ventas.forEach(v=>v.items.forEach(i=>{
+    const key = i.nombre + (i.varianteLabel?(' · '+i.varianteLabel):'');
+    ranking[key] = ranking[key] || {cantidad:0, total:0};
+    ranking[key].cantidad += i.cantidad;
+    ranking[key].total += i.cantidad*i.precioUnit;
+  }));
+  const rankingArr = Object.entries(ranking).sort((a,b)=>b[1].cantidad-a[1].cantidad).slice(0,10);
+
+  return `
+  <h2 class="section-title">Historial</h2>
+  <div class="field" style="max-width:200px;">
+    <label>Fecha</label>
+    <input type="date" value="${historialFecha}" onchange="historialFecha=this.value; renderAll();">
+  </div>
+
+  <div class="top-summary">
+    <div class="stat"><div class="v">${money(ventas.reduce((a,v)=>a+v.total,0))}</div><div class="l">Total vendido</div></div>
+    <div class="stat"><div class="v">${ventas.length}</div><div class="l">Ventas</div></div>
+    ${METODOS.map(m=>`<div class="stat"><div class="v">${money(porMetodo[m])}</div><div class="l">${m}</div></div>`).join('')}
+  </div>
+
+  <div class="card">
+    <div class="card-title">Más vendido ese día</div>
+    ${rankingArr.length===0 ? '<p class="empty">Sin ventas ese día.</p>' : `
+    <table><thead><tr><th>Producto</th><th>Cantidad</th><th>Total</th></tr></thead>
+    <tbody>${rankingArr.map(([k,v])=>`<tr><td>${k}</td><td class="num">${v.cantidad}</td><td class="num">${money(v.total)}</td></tr>`).join('')}</tbody></table>`}
+  </div>
+
+  <div class="card">
+    <div class="card-title">Detalle de ventas</div>
+    ${ventas.length===0 ? '<p class="empty">Sin ventas registradas.</p>' : ventas.slice().reverse().map(v=>`
+      <div style="padding:8px 0;border-bottom:1px dashed var(--line-soft);font-size:13.5px;">
+        <div style="display:flex;justify-content:space-between;"><b>${v.hora} · ${v.metodoPago}</b><span class="num">${money(v.total)}</span></div>
+        <div class="muted">${v.items.map(i=>i.cantidad+'x '+i.nombre+(i.varianteLabel?(' ('+i.varianteLabel+')'):'')).join(', ')}</div>
+      </div>
+    `).join('')}
+  </div>
+
+  ${turnosDia.length ? `
+  <div class="card">
+    <div class="card-title">Turnos del día</div>
+    <table><thead><tr><th>Turno</th><th>Inicial</th><th>Contado</th><th>Gastos</th><th>Estado</th></tr></thead>
+    <tbody>${turnosDia.map(t=>`<tr><td>${t.turno}</td><td class="num">${money(t.cambioInicial)}</td><td class="num">${t.cambioFinal!=null?money(t.cambioFinal):'-'}</td><td class="num">${money(t.gastos.reduce((a,g)=>a+g.monto,0))}</td><td>${t.abierto?'Abierto':'Cerrado'}</td></tr>`).join('')}</tbody></table>
+  </div>` : ''}
+  `;
+}
+
+/* =================== COMPRAS (solo admin) =================== */
+let nuevaCompra = {fecha: todayStr(), descripcion:'', proveedor:'', costo:'', notas:'', productoId:'', varianteId:'', cantidad:''};
+
+function renderCompras(){
+  const prod = state.productos.find(p=>p.id===nuevaCompra.productoId);
+  const compras = state.compras.slice().reverse();
+  return `
+  <h2 class="section-title">Compras</h2>
+  <p class="section-note">Anotá dónde compraste cada cosa: "10 curvas de remeras angelito, compradas en Las Flores".</p>
+
+  <div class="card">
+    <div class="card-title">Nueva compra</div>
+    <div class="row">
+      <div class="field" style="max-width:150px;"><label>Fecha</label><input type="date" value="${nuevaCompra.fecha}" onchange="nuevaCompra.fecha=this.value"></div>
+      <div class="field" style="flex:2 1 220px;"><label>Qué compraste</label><input type="text" placeholder="Ej: 10 curvas remeras angelito" value="${nuevaCompra.descripcion}" oninput="nuevaCompra.descripcion=this.value"></div>
+      <div class="field" style="flex:1 1 160px;"><label>Dónde / proveedor</label><input type="text" placeholder="Ej: Las Flores" value="${nuevaCompra.proveedor}" oninput="nuevaCompra.proveedor=this.value"></div>
+      <div class="field" style="max-width:130px;"><label>Costo total</label><input type="number" min="0" placeholder="0" value="${nuevaCompra.costo}" oninput="nuevaCompra.costo=this.value"></div>
+    </div>
+    <div class="field"><label>Notas (opcional)</label><textarea rows="2" placeholder="Detalles extra..." oninput="nuevaCompra.notas=this.value">${nuevaCompra.notas}</textarea></div>
+
+    <hr class="stitch">
+    <p class="section-note">Opcional: sumar esta compra directo al stock de un producto ya cargado.</p>
+    <div class="row">
+      <div class="field" style="flex:2 1 200px;">
+        <label>Producto</label>
+        <select onchange="nuevaCompra.productoId=this.value; nuevaCompra.varianteId=''; renderAll();">
+          <option value="">— No sumar a stock —</option>
+          ${state.productos.map(p=>`<option value="${p.id}" ${nuevaCompra.productoId===p.id?'selected':''}>${p.nombre}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field" style="flex:1 1 160px;">
+        <label>Variante</label>
+        <select onchange="nuevaCompra.varianteId=this.value" ${!prod?'disabled':''}>
+          <option value="">Elegí variante</option>
+          ${prod ? prod.variantes.map(v=>`<option value="${v.id}" ${nuevaCompra.varianteId===v.id?'selected':''}>${v.talle} ${v.color}</option>`).join('') : ''}
+        </select>
+      </div>
+      <div class="field" style="max-width:110px;"><label>Cantidad</label><input type="number" min="0" value="${nuevaCompra.cantidad}" oninput="nuevaCompra.cantidad=this.value"></div>
+    </div>
+    <button class="btn primary" onclick="registrarCompra()">Registrar compra</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Historial de compras</div>
+    ${compras.length===0 ? '<p class="empty">Todavía no registraste compras.</p>' : `
+    <table><thead><tr><th>Fecha</th><th>Descripción</th><th>Proveedor</th><th>Costo</th><th></th></tr></thead>
+    <tbody>${compras.map(c=>`<tr><td>${fmtDate(c.fecha)}</td><td>${c.descripcion}${c.notas?('<br><span class="muted" style="font-size:11.5px;">'+c.notas+'</span>'):''}</td><td>${c.proveedor||'-'}</td><td class="num">${money(c.costo)}</td><td><button class="link-btn" onclick="eliminarCompra('${c.id}')">eliminar</button></td></tr>`).join('')}</tbody></table>`}
+  </div>
+  `;
+}
+
+function registrarCompra(){
+  if(!nuevaCompra.descripcion.trim()){ showToast('Contame qué compraste'); return; }
+  state.compras.push({
+    id: uid(), fecha: nuevaCompra.fecha, descripcion: nuevaCompra.descripcion.trim(),
+    proveedor: nuevaCompra.proveedor.trim(), costo: Number(nuevaCompra.costo)||0,
+    notas: nuevaCompra.notas.trim(), productoId: nuevaCompra.productoId||null, varianteId: nuevaCompra.varianteId||null,
+    cantidad: Number(nuevaCompra.cantidad)||0
+  });
+  if(nuevaCompra.productoId && nuevaCompra.varianteId && Number(nuevaCompra.cantidad)>0){
+    const p = state.productos.find(p=>p.id===nuevaCompra.productoId);
+    const v = p.variantes.find(v=>v.id===nuevaCompra.varianteId);
+    v.stock += Number(nuevaCompra.cantidad);
+    showToast('Compra registrada y stock actualizado');
+  }else{
+    showToast('Compra registrada');
+  }
+  save();
+  nuevaCompra = {fecha: todayStr(), descripcion:'', proveedor:'', costo:'', notas:'', productoId:'', varianteId:'', cantidad:''};
+  renderAll();
+}
+function eliminarCompra(id){
+  const c = state.compras.find(c=>c.id===id);
+  if(!c) return;
+  if(!confirm('¿Eliminar esta compra del historial?')) return;
+  if(c.productoId && c.varianteId && c.cantidad>0){
+    if(confirm('Esta compra había sumado '+c.cantidad+' unidades de stock. ¿Querés restarlas también del stock actual?')){
+      const p = state.productos.find(p=>p.id===c.productoId);
+      const v = p ? p.variantes.find(v=>v.id===c.varianteId) : null;
+      if(v) v.stock = Math.max(0, v.stock - c.cantidad);
+    }
+  }
+  state.compras = state.compras.filter(x=>x.id!==id);
+  save();
+  showToast('Compra eliminada');
+  renderAll();
+}
+
+/* =================== AJUSTES (solo admin) =================== */
+let nuevaCategoria = '';
+
+function renderAjustes(){
+  return `
+  <h2 class="section-title">Ajustes</h2>
+
+  <div class="card">
+    <div class="card-title">Datos del local</div>
+    <div class="field" style="max-width:280px;">
+      <label>Nombre del local</label>
+      <input type="text" value="${state.config.nombreLocal}" onchange="state.config.nombreLocal=this.value; save(); renderAll();">
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Categorías de productos</div>
+    <div style="margin-bottom:10px;">
+      ${state.config.categorias.map(c=>`<span class="cat-chip">${c}<button onclick="eliminarCategoria('${c.replace(/'/g,"\\'")}')" title="Eliminar">×</button></span>`).join('')}
+    </div>
+    <div class="row">
+      <div class="field" style="flex:1 1 200px;"><input type="text" placeholder="Nueva categoría" value="${nuevaCategoria}" oninput="nuevaCategoria=this.value" onkeydown="if(event.key==='Enter') agregarCategoria();"></div>
+      <div class="field" style="flex:0 0 auto;"><button class="btn small primary" onclick="agregarCategoria()">Agregar</button></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Recargos por método de pago</div>
+    <p class="section-note" style="margin-top:-4px;">Efectivo y Mercado Pago se cobran al mismo precio, sin recargo.</p>
+    <div class="row">
+      <div class="field" style="max-width:160px;">
+        <label>Recargo Débito (%)</label>
+        <input type="number" min="0" value="${state.config.debitoPct}" onchange="state.config.debitoPct=Number(this.value)||0; save(); renderAll();">
+      </div>
+      <div class="field" style="max-width:160px;">
+        <label>Recargo Crédito (%)</label>
+        <input type="number" min="0" value="${state.config.creditoPct}" onchange="state.config.creditoPct=Number(this.value)||0; save(); renderAll();">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">PIN de acceso</div>
+    <p class="section-note" style="margin-top:-4px;">Ojo: esto es solo un filtro simple para separar accesos, no es una contraseña con seguridad real (cualquiera con el archivo podría inspeccionar el código). No lo uses para proteger algo crítico.</p>
+    <div class="row">
+      <div class="field" style="max-width:160px;">
+        <label>PIN Admin</label>
+        <input type="text" value="${state.config.pins.admin}" onchange="state.config.pins.admin=this.value; save();">
+      </div>
+      <div class="field" style="max-width:160px;">
+        <label>PIN Empleado</label>
+        <input type="text" value="${state.config.pins.empleado}" onchange="state.config.pins.empleado=this.value; save();">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Copia de seguridad</div>
+    <p class="section-note" style="margin-top:-4px;">Los datos se guardan solo en este dispositivo/navegador. Descargá una copia de vez en cuando por las dudas.</p>
+    <div class="row">
+      <button class="btn" onclick="exportarDatos()">Descargar copia (.json)</button>
+      <label class="btn ghost" style="cursor:pointer;">Importar copia
+        <input type="file" accept="application/json" style="display:none;" onchange="importarDatos(event)">
+      </label>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Zona de riesgo</div>
+    <button class="btn danger" onclick="borrarTodo()">Borrar todos los datos</button>
+  </div>
+  `;
+}
+
+function agregarCategoria(){
+  const val = nuevaCategoria.trim();
+  if(!val) return;
+  if(state.config.categorias.some(c=>c.toLowerCase()===val.toLowerCase())){ showToast('Esa categoría ya existe'); return; }
+  state.config.categorias.push(val);
+  save();
+  nuevaCategoria = '';
+  renderAll();
+}
+function eliminarCategoria(cat){
+  const enUso = state.productos.some(p=>p.categoria===cat);
+  const msg = enUso ? 'Hay productos cargados en esta categoría; van a quedar sin categoría asignada. ¿Eliminar igual?' : '¿Eliminar esta categoría?';
+  if(!confirm(msg)) return;
+  state.config.categorias = state.config.categorias.filter(c=>c!==cat);
+  save();
+  renderAll();
+}
+
+function exportarDatos(){
+  const blob = new Blob([JSON.stringify(state,null,2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'zero-zed-backup-'+todayStr()+'.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+function importarDatos(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try{
+      const data = JSON.parse(reader.result);
+      if(!data.productos || !data.ventas) throw new Error('formato inválido');
+      if(!data.config.categorias) data.config.categorias = DEFAULT_CATEGORIAS.slice();
+      if(!data.config.pins) data.config.pins = { admin:"1234", empleado:"0000" };
+      state = data;
+      save();
+      showToast('Datos importados');
+      renderAll();
+    }catch(e){
+      showToast('El archivo no es una copia válida');
+    }
+  };
+  reader.readAsText(file);
+}
+function borrarTodo(){
+  if(!confirm('Esto borra todo: productos, ventas, turnos y compras. ¿Seguro?')) return;
+  if(!confirm('Última confirmación: no se puede deshacer. ¿Borrar todo?')) return;
+  state = defaultState();
+  save();
+  showToast('Datos borrados');
+  renderAll();
+}
+
+function afterRenderHooks(){}
+
+renderAll();
+</script>
+</body>
+</html>
