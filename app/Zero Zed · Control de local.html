@@ -101,7 +101,10 @@
     margin:16px 0 18px;
     overflow-x:auto;
     padding-bottom:2px;
+    scrollbar-width:none;
+    -ms-overflow-style:none;
   }
+  nav.tabs::-webkit-scrollbar{display:none;}
   nav.tabs button{
     font-family:var(--font-display);
     font-weight:700;
@@ -216,9 +219,8 @@
   .cat-heading:first-child{margin-top:0;}
   .cat-chip{display:inline-flex;align-items:center;gap:6px;background:var(--paper);border:1.5px solid var(--line);border-radius:20px;padding:4px 6px 4px 12px;font-size:12.5px;margin:0 6px 6px 0;}
   .cat-chip button{background:none;border:none;color:var(--brick);cursor:pointer;font-size:14px;line-height:1;padding:0 4px;}
-  .cat-scroll{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 12px;margin-bottom:4px;-webkit-overflow-scrolling:touch;}
-  .cat-scroll::-webkit-scrollbar{height:6px;}
-  .cat-scroll::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px;}
+  .cat-scroll{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 12px;margin-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:none;-ms-overflow-style:none;}
+  .cat-scroll::-webkit-scrollbar{display:none;}
   .cat-scroll-chip{
     flex:0 0 auto;
     background:var(--paper);
@@ -279,6 +281,8 @@
 <div id="receiptOverlay" style="display:none;"></div>
 <div class="toast" id="toast"></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
 /* ---------- estado ---------- */
 const STORAGE_KEY = 'controlLocal_zerozed_v1';
@@ -333,7 +337,8 @@ function defaultState(){
     productos: [],
     ventas: [],
     turnos: [],
-    compras: []
+    compras: [],
+    devoluciones: []
   };
 }
 let state;
@@ -342,6 +347,7 @@ try{
   state = raw ? JSON.parse(raw) : defaultState();
   if(!state.config.categorias) state.config.categorias = DEFAULT_CATEGORIAS.slice();
   if(!state.config.pins) state.config.pins = { admin:"1234", empleado:"0000" };
+  if(!state.devoluciones) state.devoluciones = [];
 }catch(e){ state = defaultState(); }
 
 function save(){
@@ -396,6 +402,7 @@ let currentTab = 'vender';
 const ALL_TABS = [
   {id:'vender', label:'Vender', roles:['admin','empleado']},
   {id:'stock', label:'Stock', roles:['admin','empleado']},
+  {id:'devoluciones', label:'Devoluciones', roles:['admin','empleado']},
   {id:'turno', label:'Turno', roles:['admin','empleado']},
   {id:'historial', label:'Historial', roles:['admin','empleado']},
   {id:'compras', label:'Compras', roles:['admin']},
@@ -451,6 +458,7 @@ function renderAll(){
   else if(currentTab==='stock') c.innerHTML = renderStock();
   else if(currentTab==='turno') c.innerHTML = renderTurno();
   else if(currentTab==='historial') c.innerHTML = renderHistorial();
+  else if(currentTab==='devoluciones') c.innerHTML = renderDevoluciones();
   else if(currentTab==='compras') c.innerHTML = renderCompras();
   else if(currentTab==='ajustes') c.innerHTML = renderAjustes();
   afterRenderHooks();
@@ -490,7 +498,7 @@ function renderRecibo(ventaId){
   return `
   <div class="receipt-wrap">
     <div class="receipt" style="position:relative;">
-      <button class="no-print" onclick="cerrarComprobante()" title="Cerrar sin imprimir" style="position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;border:1.5px solid #14181A;background:#fff;color:#14181A;font-size:15px;font-weight:700;cursor:pointer;line-height:1;">✕</button>
+      <button class="no-print" onclick="cerrarComprobante()" title="Cerrar sin guardar" style="position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;border:1.5px solid #14181A;background:#fff;color:#14181A;font-size:15px;font-weight:700;cursor:pointer;line-height:1;">✕</button>
       <div class="receipt-head">
         <img src="${LOGO_DATA_URI}" alt="Zero Zed">
         <div class="rname">ZERO ZED</div>
@@ -506,63 +514,63 @@ function renderRecibo(ventaId){
       <div class="rline" style="margin-top:6px;"><span>Método de pago</span><span>${v.metodoPago}</span></div>
       <div class="receipt-foot">¡Gracias por tu compra!</div>
       <div class="receipt-actions no-print">
-        <button class="btn primary" onclick="window.print()">🖨️ Imprimir</button>
-        <button class="btn primary" onclick="guardarComprobante('${v.id}')">💾 Guardar archivo</button>
+        <button class="btn primary" onclick="guardarComprobante('${v.id}')">💾 Descargar (PDF)</button>
         <button class="btn ghost" onclick="cerrarComprobante()">Cerrar</button>
       </div>
     </div>
   </div>`;
 }
 
-function construirHtmlComprobanteStandalone(v){
-  return `<!DOCTYPE html>
-<html lang="es"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Comprobante Zero Zed · ${fmtDate(v.fecha)} ${v.hora}</title>
-<style>
-  body{margin:0;background:#EAE6DA;font-family:'IBM Plex Mono',monospace;display:flex;justify-content:center;padding:30px 12px;}
-  .receipt{background:#fff;color:#14181A;width:100%;max-width:340px;padding:22px 20px;border-radius:2px;box-shadow:2px 3px 0 rgba(0,0,0,0.15);}
-  .receipt-head{text-align:center;margin-bottom:10px;}
-  .receipt-head img{height:38px;margin-bottom:6px;}
-  .receipt-head .rname{font-family:Arial,sans-serif;font-weight:700;font-size:20px;letter-spacing:0.3px;}
-  .receipt-head .rmeta{font-size:11px;color:#5B6660;}
-  hr{border:none;border-top:1.5px dashed #14181A;margin:10px 0;}
-  table{width:100%;font-size:12px;border-collapse:collapse;}
-  table td{padding:3px 0;border:none;}
-  .rtotal{display:flex;justify-content:space-between;font-family:Arial,sans-serif;font-weight:700;font-size:19px;margin-top:6px;}
-  .rline{display:flex;justify-content:space-between;font-size:12.5px;padding:2px 0;}
-  .receipt-foot{text-align:center;font-size:11px;color:#5B6660;margin-top:14px;}
-  .receipt-print{text-align:center;margin-top:16px;}
-  .receipt-print button{font-family:Arial,sans-serif;font-weight:600;font-size:13px;padding:8px 16px;border:2px solid #14181A;background:#3FE573;color:#06120A;border-radius:2px;cursor:pointer;}
-  @media print{ .receipt-print{display:none;} body{background:#fff;padding:0;} .receipt{box-shadow:none;max-width:100%;} }
-</style></head>
-<body>
-  <div class="receipt">
-    <div class="receipt-head">
-      <img src="${LOGO_DATA_URI}" alt="Zero Zed">
-      <div class="rname">ZERO ZED</div>
-      <div class="rmeta">${fmtDate(v.fecha)} · ${v.hora}hs</div>
-      <div class="rmeta">Comprobante interno · no válido como factura</div>
-    </div>
-    <hr>
-    <table>${filasComprobante(v)}</table>
-    <hr>
-    <div class="rline"><span>Subtotal</span><span>${money(v.subtotal)}</span></div>
-    ${v.recargoPct>0 ? `<div class="rline"><span>Recargo (${v.recargoPct}%)</span><span>${money(v.total-v.subtotal)}</span></div>` : ''}
-    <div class="rtotal"><span>TOTAL</span><span>${money(v.total)}</span></div>
-    <div class="rline" style="margin-top:6px;"><span>Método de pago</span><span>${v.metodoPago}</span></div>
-    <div class="receipt-foot">¡Gracias por tu compra!</div>
-    <div class="receipt-print"><button onclick="window.print()">Imprimir este comprobante</button></div>
-  </div>
-</body></html>`;
-}
-
 async function guardarComprobante(ventaId){
   const v = state.ventas.find(v=>v.id===ventaId);
   if(!v) return;
-  const html = construirHtmlComprobanteStandalone(v);
-  const filename = 'comprobante-'+v.fecha+'-'+v.hora.replace(':','')+'.html';
-  await descargarArchivo(filename, html, 'text/html');
+  if(typeof window.jspdf === 'undefined'){ showToast('El generador de PDF sigue cargando, probá de nuevo en un segundo'); return; }
+  const { jsPDF } = window.jspdf;
+  const anchoMM = 72;
+  const altoMM = 60 + v.items.length*10 + (v.recargoPct>0?6:0);
+  const doc = new jsPDF({unit:'mm', format:[anchoMM, altoMM]});
+  const cx = anchoMM/2;
+  let y = 8;
+
+  try{ doc.addImage(LOGO_DATA_URI, 'PNG', cx-8, y, 16, 13.2); y += 16; }catch(e){ /* si falla el logo, seguimos sin él */ }
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(13);
+  doc.text('ZERO ZED', cx, y, {align:'center'}); y += 5;
+  doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(90,100,95);
+  doc.text(fmtDate(v.fecha)+' · '+v.hora+'hs', cx, y, {align:'center'}); y += 4;
+  doc.text('Comprobante interno · no válido como factura', cx, y, {align:'center'}); y += 4;
+  doc.setTextColor(20,24,26);
+  doc.setLineDash([0.8,0.8],0); doc.line(4,y,anchoMM-4,y); y += 5;
+
+  doc.setFontSize(8.5);
+  v.items.forEach(i=>{
+    const nombreLinea = i.cantidad+'x '+i.nombre+(i.varianteLabel?(' ('+i.varianteLabel+')'):'');
+    const partido = doc.splitTextToSize(nombreLinea, anchoMM-8);
+    doc.setFont('helvetica','normal');
+    doc.text(partido, 4, y); y += 4*partido.length;
+    doc.setTextColor(90,100,95); doc.setFontSize(7.5);
+    doc.text(money(i.precioUnit)+' c/u', 4, y);
+    doc.setTextColor(20,24,26); doc.setFontSize(8.5);
+    doc.text(money(i.cantidad*i.precioUnit), anchoMM-4, y, {align:'right'});
+    y += 5;
+  });
+
+  doc.setLineDash([0.8,0.8],0); doc.line(4,y,anchoMM-4,y); y += 5;
+  doc.setFontSize(8.5);
+  doc.text('Subtotal', 4, y); doc.text(money(v.subtotal), anchoMM-4, y, {align:'right'}); y += 4.5;
+  if(v.recargoPct>0){
+    doc.text('Recargo ('+v.recargoPct+'%)', 4, y); doc.text(money(v.total-v.subtotal), anchoMM-4, y, {align:'right'}); y += 4.5;
+  }
+  doc.setFont('helvetica','bold'); doc.setFontSize(12);
+  doc.text('TOTAL', 4, y); doc.text(money(v.total), anchoMM-4, y, {align:'right'}); y += 6;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
+  doc.text('Método de pago', 4, y); doc.text(v.metodoPago, anchoMM-4, y, {align:'right'}); y += 6;
+  doc.setFontSize(8); doc.setTextColor(90,100,95);
+  doc.text('¡Gracias por tu compra!', cx, y, {align:'center'});
+
+  const blob = doc.output('blob');
+  const filename = 'comprobante-'+v.fecha+'-'+v.hora.replace(':','')+'.pdf';
+  await descargarArchivo(filename, blob, 'application/pdf');
 }
 
 /* =================== LOGIN =================== */
@@ -611,12 +619,24 @@ function renderVender(){
   const categorias = state.config.categorias;
   const productos = state.productos;
   const term = ventaSearch.trim().toLowerCase();
+
+  // si el término coincide EXACTO con el código de una variante, la seleccionamos directo (tipo escaneo de etiqueta)
+  if(term){
+    outer:
+    for(const p of productos){
+      for(const v of p.variantes){
+        if((v.codigo||'').toLowerCase()===term){ ventaSelProd = p.id; ventaSelVar = v.id; break outer; }
+      }
+    }
+  }
+
   let prodsFiltrados = ventaSelCat ? productos.filter(p=>p.categoria===ventaSelCat) : productos;
   if(term){
     prodsFiltrados = prodsFiltrados.filter(p=>
       p.nombre.toLowerCase().includes(term) ||
       (p.descripcion||'').toLowerCase().includes(term) ||
-      p.categoria.toLowerCase().includes(term)
+      p.categoria.toLowerCase().includes(term) ||
+      p.variantes.some(v=>(v.codigo||'').toLowerCase().includes(term))
     );
   }
   const prodSel = productos.find(p=>p.id===ventaSelProd);
@@ -662,7 +682,7 @@ function renderVender(){
         <label>Talle / color</label>
         <select onchange="ventaSelVar=this.value; renderAll();" ${!prodSel?'disabled':''}>
           <option value="">Elegí variante</option>
-          ${variantes.map(v=>`<option value="${v.id}" ${ventaSelVar===v.id?'selected':''} ${v.stock<=0?'disabled':''}>${v.talle} ${v.color} (stock ${v.stock})</option>`).join('')}
+          ${variantes.map(v=>`<option value="${v.id}" ${ventaSelVar===v.id?'selected':''} ${v.stock<=0?'disabled':''}>${v.talle} ${v.color}${v.codigo?(' ['+v.codigo+']'):''} (stock ${v.stock})</option>`).join('')}
         </select>
       </div>
       <div class="field" style="max-width:90px;">
@@ -761,7 +781,7 @@ function confirmarVenta(){
 let showNuevoProducto = false;
 let nuevoProd = {nombre:'', descripcion:'', categoria:'', costo:'', precio:''};
 let addVarianteFormFor = null;
-let nuevaVariante = {talle:'', color:'', stock:''};
+let nuevaVariante = {talle:'', color:'', stock:'', codigo:''};
 let stockSearch = '';
 let stockCategoryFilter = '';
 
@@ -776,7 +796,8 @@ function renderStock(){
     productosFiltrados = productosFiltrados.filter(p=>
       p.nombre.toLowerCase().includes(term) ||
       (p.descripcion||'').toLowerCase().includes(term) ||
-      p.categoria.toLowerCase().includes(term)
+      p.categoria.toLowerCase().includes(term) ||
+      p.variantes.some(v=>(v.codigo||'').toLowerCase().includes(term))
     );
   }
 
@@ -858,7 +879,7 @@ function renderProductoCard(p){
     ${p.descripcion ? `<div class="prod-desc">${p.descripcion}</div>` : ''}
     ${p.variantes.length===0 ? '<p class="empty">Sin variantes cargadas todavía.</p>' : p.variantes.map(v=>`
       <div class="variant-row">
-        <span class="vlabel">${v.talle||'-'} ${v.color?('· '+v.color):''}</span>
+        <span class="vlabel">${v.talle||'-'} ${v.color?('· '+v.color):''} ${v.codigo?`<span class="pill mid" style="margin-left:4px;">${v.codigo}</span>`:''}</span>
         <span class="pill ${v.stock<=0?'low':v.stock<=LOW_STOCK?'mid':'ok'}">${v.stock}</span>
         <div class="stepper">
           <button onclick="ajustarStock('${p.id}','${v.id}',-1)">−</button>
@@ -872,13 +893,27 @@ function renderProductoCard(p){
         <div class="field" style="flex:1 1 90px;"><label>Talle</label><input type="text" value="${nuevaVariante.talle}" oninput="nuevaVariante.talle=this.value" placeholder="S, M, 40..."></div>
         <div class="field" style="flex:1 1 90px;"><label>Color</label><input type="text" value="${nuevaVariante.color}" oninput="nuevaVariante.color=this.value" placeholder="Negro..."></div>
         <div class="field" style="flex:1 1 70px;"><label>Stock</label><input type="number" min="0" value="${nuevaVariante.stock}" oninput="nuevaVariante.stock=this.value"></div>
+        <div class="field" style="flex:1 1 120px;">
+          <label>Código / palabra clave</label>
+          <div style="display:flex;gap:4px;">
+            <input type="text" value="${nuevaVariante.codigo}" oninput="nuevaVariante.codigo=this.value" placeholder="Ej: REM-SAK-1">
+            <button class="btn small ghost" title="Sugerir a partir del nombre y el talle" onclick="nuevaVariante.codigo=sugerirCodigoVariante('${p.nombre.replace(/'/g,"\\'")}', nuevaVariante.talle); renderAll();">Sugerir</button>
+          </div>
+        </div>
         <div class="field" style="flex:0 0 auto;justify-content:flex-end;">
           <button class="btn small primary" onclick="guardarVariante('${p.id}')">Agregar</button>
         </div>
-      ` : `<button class="btn small ghost" onclick="addVarianteFormFor='${p.id}'; nuevaVariante={talle:'',color:'',stock:''}; renderAll();">+ Talle/color</button>
+      ` : `<button class="btn small ghost" onclick="addVarianteFormFor='${p.id}'; nuevaVariante={talle:'',color:'',stock:'',codigo:''}; renderAll();">+ Talle/color</button>
       <button class="btn small danger" onclick="eliminarProducto('${p.id}')">Eliminar producto</button>`}
     </div>
   </div>`;
+}
+
+function sugerirCodigoVariante(nombre, talle){
+  const palabras = (nombre||'').trim().split(/\s+/).filter(Boolean).slice(0,2);
+  const partes = palabras.map(w=>w.replace(/[^a-zA-Z0-9]/g,'').slice(0,3).toUpperCase());
+  const talleLimpio = (talle||'').toString().trim().toUpperCase().replace(/\s+/g,'');
+  return [...partes, talleLimpio].filter(Boolean).join('-');
 }
 
 function crearProducto(){
@@ -901,7 +936,7 @@ function eliminarProducto(id){
 function guardarVariante(prodId){
   const p = state.productos.find(p=>p.id===prodId);
   if(!p) return;
-  p.variantes.push({id:uid(), talle:nuevaVariante.talle.trim()||'Único', color:nuevaVariante.color.trim(), stock:Number(nuevaVariante.stock)||0});
+  p.variantes.push({id:uid(), talle:nuevaVariante.talle.trim()||'Único', color:nuevaVariante.color.trim(), codigo:(nuevaVariante.codigo||'').trim().toUpperCase(), stock:Number(nuevaVariante.stock)||0});
   save();
   addVarianteFormFor = null;
   renderAll();
@@ -917,6 +952,171 @@ function ajustarStock(prodId,varId,delta){
   const v = p.variantes.find(v=>v.id===varId);
   v.stock = Math.max(0, v.stock+delta);
   save(); renderAll();
+}
+
+/* =================== DEVOLUCIONES =================== */
+let devFecha = todayStr();
+let devVentaId = '';
+let devItemIdx = '';
+let devCantidad = 1;
+let devMotivo = '';
+let devReintegro = 'Efectivo';
+// modo manual (cuando la venta no está en el sistema)
+let devManualProdId = '';
+let devManualVarId = '';
+
+function renderDevoluciones(){
+  const ventasDia = ventasDe(devFecha);
+  const ventaSel = ventasDia.find(v=>v.id===devVentaId);
+  const itemSel = ventaSel ? ventaSel.items[devItemIdx] : null;
+  const historial = state.devoluciones.slice().reverse();
+
+  const manualProd = state.productos.find(p=>p.id===devManualProdId);
+
+  return `
+  <h2 class="section-title">Devoluciones</h2>
+  <p class="section-note">Registrá un cambio o devolución de un producto ya vendido: repone el stock y, si corresponde, descuenta el reintegro de la caja del turno actual.</p>
+
+  <div class="card">
+    <div class="card-title">Buscar la venta</div>
+    <div class="row">
+      <div class="field" style="max-width:170px;"><label>Fecha de la venta</label><input type="date" value="${devFecha}" onchange="devFecha=this.value; devVentaId=''; devItemIdx=''; renderAll();"></div>
+      <div class="field" style="flex:2 1 240px;">
+        <label>Venta</label>
+        <select onchange="devVentaId=this.value; devItemIdx=''; renderAll();">
+          <option value="">Elegí una venta de ese día</option>
+          ${ventasDia.map(v=>`<option value="${v.id}" ${devVentaId===v.id?'selected':''}>${v.hora} · ${v.metodoPago} · ${money(v.total)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field" style="flex:2 1 200px;">
+        <label>Producto de esa venta</label>
+        <select onchange="devItemIdx=this.value; renderAll();" ${!ventaSel?'disabled':''}>
+          <option value="">Elegí un producto</option>
+          ${ventaSel ? ventaSel.items.map((i,idx)=>`<option value="${idx}" ${String(devItemIdx)===String(idx)?'selected':''}>${i.cantidad}x ${i.nombre}${i.varianteLabel?(' ('+i.varianteLabel+')'):''}</option>`).join('') : ''}
+        </select>
+      </div>
+    </div>
+    ${itemSel ? renderFormDevolucion({
+        origen:'venta', ventaId: ventaSel.id, productoId:itemSel.productoId, varianteId:itemSel.varianteId,
+        nombre:itemSel.nombre, varianteLabel:itemSel.varianteLabel, precioUnit:itemSel.precioUnit, maxCantidad:itemSel.cantidad
+      }) : ''}
+  </div>
+
+  <div class="card">
+    <div class="card-title">¿La venta no está en el sistema? Devolución manual</div>
+    <p class="section-note" style="margin-top:-4px;">Elegí directamente el producto y la variante a devolver.</p>
+    <div class="row">
+      <div class="field" style="flex:2 1 200px;">
+        <label>Producto</label>
+        <select onchange="devManualProdId=this.value; devManualVarId=''; renderAll();">
+          <option value="">Elegí un producto</option>
+          ${state.productos.map(p=>`<option value="${p.id}" ${devManualProdId===p.id?'selected':''}>${p.nombre}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field" style="flex:1 1 160px;">
+        <label>Variante</label>
+        <select onchange="devManualVarId=this.value; renderAll();" ${!manualProd?'disabled':''}>
+          <option value="">Elegí variante</option>
+          ${manualProd ? manualProd.variantes.map(v=>`<option value="${v.id}" ${devManualVarId===v.id?'selected':''}>${v.talle} ${v.color}</option>`).join('') : ''}
+        </select>
+      </div>
+    </div>
+    ${(manualProd && manualProd.variantes.find(v=>v.id===devManualVarId)) ? (()=>{
+        const v = manualProd.variantes.find(v=>v.id===devManualVarId);
+        return renderFormDevolucion({
+          origen:'manual', ventaId:null, productoId:manualProd.id, varianteId:v.id,
+          nombre:manualProd.nombre, varianteLabel:[v.talle,v.color].filter(x=>x&&x!=='-').join(' / ')||'Único',
+          precioUnit:manualProd.precio, maxCantidad:9999
+        });
+      })() : ''}
+  </div>
+
+  <div class="card">
+    <div class="card-title">Historial de devoluciones</div>
+    ${historial.length===0 ? '<p class="empty">Todavía no registraste devoluciones.</p>' : `
+    <table><thead><tr><th>Fecha</th><th>Producto</th><th>Cant.</th><th>Motivo</th><th>Reintegro</th><th></th></tr></thead>
+    <tbody>${historial.map(d=>`<tr>
+      <td>${fmtDate(d.fecha)} ${d.hora}</td>
+      <td>${d.nombre}${d.varianteLabel?(' ('+d.varianteLabel+')'):''}</td>
+      <td class="num">${d.cantidad}</td>
+      <td>${d.motivo||'-'}</td>
+      <td class="num">${d.reintegro==='Sin reintegro'?'-':money(d.montoDevuelto)+' ('+d.reintegro+')'}</td>
+      <td><button class="link-btn" onclick="eliminarDevolucion('${d.id}')">eliminar</button></td>
+    </tr>`).join('')}</tbody></table>`}
+  </div>
+  `;
+}
+
+function renderFormDevolucion(ctx){
+  window._devCtx = ctx; // guardamos el contexto actual para confirmarDevolucion()
+  return `
+  <hr class="stitch">
+  <div class="row">
+    <div class="field" style="max-width:100px;">
+      <label>Cantidad</label>
+      <input type="number" min="1" max="${ctx.maxCantidad}" value="${devCantidad}" onchange="devCantidad=Math.max(1,parseInt(this.value)||1); renderAll();">
+    </div>
+    <div class="field" style="flex:2 1 200px;">
+      <label>Motivo (opcional)</label>
+      <input type="text" placeholder="Ej: talle equivocado, defecto de fábrica..." value="${devMotivo}" oninput="devMotivo=this.value">
+    </div>
+    <div class="field" style="max-width:200px;">
+      <label>¿Cómo se reintegra?</label>
+      <select onchange="devReintegro=this.value">
+        <option ${devReintegro==='Efectivo'?'selected':''}>Efectivo</option>
+        <option ${devReintegro==='Mercado Pago'?'selected':''}>Mercado Pago</option>
+        <option value="Sin reintegro" ${devReintegro==='Sin reintegro'?'selected':''}>Sin reintegro (cambio por otro producto)</option>
+      </select>
+    </div>
+  </div>
+  <p class="section-note" style="margin:-4px 0 10px;">Monto a devolver: ${money(ctx.precioUnit*devCantidad)}. Repone ${devCantidad} unidad(es) al stock de "${ctx.nombre}${ctx.varianteLabel?(' - '+ctx.varianteLabel):''}".</p>
+  <button class="btn primary" onclick="confirmarDevolucion()">Registrar devolución</button>
+  `;
+}
+
+function confirmarDevolucion(){
+  const ctx = window._devCtx;
+  if(!ctx) return;
+  const p = state.productos.find(p=>p.id===ctx.productoId);
+  const v = p ? p.variantes.find(v=>v.id===ctx.varianteId) : null;
+  if(!v){ showToast('No se encontró esa variante en el stock actual'); return; }
+  const cantidad = Math.max(1, Math.min(devCantidad, ctx.maxCantidad));
+  const montoDevuelto = ctx.precioUnit * cantidad;
+
+  v.stock += cantidad;
+
+  const t = turnoAbierto();
+  if(t && (devReintegro==='Efectivo')){
+    t.gastos.push({desc:'Devolución: '+ctx.nombre+(ctx.varianteLabel?(' ('+ctx.varianteLabel+')'):''), monto:montoDevuelto, hora:timeStr()});
+  }
+
+  state.devoluciones.push({
+    id: uid(), fecha: todayStr(), hora: timeStr(),
+    ventaId: ctx.ventaId, productoId: ctx.productoId, varianteId: ctx.varianteId,
+    nombre: ctx.nombre, varianteLabel: ctx.varianteLabel,
+    cantidad, montoDevuelto, motivo: devMotivo.trim(), reintegro: devReintegro,
+    turnoId: t ? t.id : null
+  });
+  save();
+  showToast('Devolución registrada');
+  devVentaId=''; devItemIdx=''; devCantidad=1; devMotivo=''; devReintegro='Efectivo';
+  devManualProdId=''; devManualVarId='';
+  renderAll();
+}
+
+function eliminarDevolucion(id){
+  const d = state.devoluciones.find(d=>d.id===id);
+  if(!d) return;
+  if(!confirm('¿Eliminar esta devolución del historial?')) return;
+  if(confirm('¿También revertir el stock que había sumado esta devolución (restar '+d.cantidad+' unidad/es)?')){
+    const p = state.productos.find(p=>p.id===d.productoId);
+    const v = p ? p.variantes.find(v=>v.id===d.varianteId) : null;
+    if(v) v.stock = Math.max(0, v.stock - d.cantidad);
+  }
+  state.devoluciones = state.devoluciones.filter(x=>x.id!==id);
+  save();
+  showToast('Devolución eliminada');
+  renderAll();
 }
 
 /* =================== TURNO =================== */
@@ -1088,9 +1288,14 @@ function renderHistorial(){
 
   return `
   <h2 class="section-title">Historial</h2>
-  <div class="field" style="max-width:200px;">
-    <label>Fecha</label>
-    <input type="date" value="${historialFecha}" onchange="historialFecha=this.value; renderAll();">
+  <div class="row" style="align-items:flex-end;">
+    <div class="field" style="max-width:200px;">
+      <label>Fecha</label>
+      <input type="date" value="${historialFecha}" onchange="historialFecha=this.value; renderAll();">
+    </div>
+    <div class="field" style="flex:0 0 auto;">
+      <button class="btn" onclick="exportarVentasDia()">Descargar registro del día (Excel)</button>
+    </div>
   </div>
 
   <div class="top-summary">
@@ -1131,87 +1336,154 @@ function renderHistorial(){
   `;
 }
 
+async function exportarVentasDia(){
+  if(typeof XLSX === 'undefined'){ showToast('El generador de Excel sigue cargando, probá de nuevo en un segundo'); return; }
+  const fecha = historialFecha;
+  const ventas = ventasDe(fecha);
+  const turnosDia = state.turnos.filter(t=>t.fecha===fecha);
+  const wb = XLSX.utils.book_new();
+  ['Mañana','Tarde'].forEach(nombreTurno=>{
+    const turno = turnosDia.find(t=>t.turno===nombreTurno);
+    const ventasTurno = turno ? ventas.filter(v=>v.turnoId===turno.id) : [];
+    const filas = [];
+    ventasTurno.forEach(v=>{
+      v.items.forEach(i=>{
+        filas.push({Hora:v.hora, Metodo:v.metodoPago, Producto:i.nombre, Variante:i.varianteLabel||'', Cantidad:i.cantidad, PrecioUnit:i.precioUnit, Subtotal:i.cantidad*i.precioUnit});
+      });
+    });
+    const totalTurno = ventasTurno.reduce((a,v)=>a+v.total,0);
+    if(filas.length===0){
+      filas.push({Hora:'', Metodo:'', Producto:'Sin ventas registradas', Variante:'', Cantidad:'', PrecioUnit:'', Subtotal:''});
+    }
+    filas.push({Hora:'', Metodo:'', Producto:'', Variante:'TOTAL TURNO', Cantidad:'', PrecioUnit:'', Subtotal: totalTurno});
+    const ws = XLSX.utils.json_to_sheet(filas);
+    XLSX.utils.book_append_sheet(wb, ws, nombreTurno);
+  });
+  const arrayBuf = XLSX.write(wb, {type:'array', bookType:'xlsx'});
+  const blob = new Blob([arrayBuf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  await descargarArchivo('zero-zed-ventas-'+fecha+'.xlsx', blob, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+}
+
 /* =================== COMPRAS (solo admin) =================== */
-let nuevaCompra = {fecha: todayStr(), descripcion:'', proveedor:'', costo:'', notas:'', productoId:'', varianteId:'', cantidad:''};
+let nuevaCompra = {fecha: todayStr(), descripcion:'', proveedor:'', costo:'', notas:''};
+let compraLineaProd = '';
+let compraLineaVar = '';
+let compraLineaCant = 1;
+let compraLineas = []; // [{productoId, varianteId, nombre, varianteLabel, cantidad}]
 
 function renderCompras(){
-  const prod = state.productos.find(p=>p.id===nuevaCompra.productoId);
+  const prodLinea = state.productos.find(p=>p.id===compraLineaProd);
   const compras = state.compras.slice().reverse();
   return `
   <h2 class="section-title">Compras</h2>
-  <p class="section-note">Anotá dónde compraste cada cosa: "10 curvas de remeras angelito, compradas en Las Flores".</p>
+  <p class="section-note">Anotá dónde compraste cada cosa: "remeras angelito, compradas en Las Flores", con cada talle que trajiste.</p>
 
   <div class="card">
     <div class="card-title">Nueva compra</div>
     <div class="row">
       <div class="field" style="max-width:150px;"><label>Fecha</label><input type="date" value="${nuevaCompra.fecha}" onchange="nuevaCompra.fecha=this.value"></div>
-      <div class="field" style="flex:2 1 220px;"><label>Qué compraste</label><input type="text" placeholder="Ej: 10 curvas remeras angelito" value="${nuevaCompra.descripcion}" oninput="nuevaCompra.descripcion=this.value"></div>
+      <div class="field" style="flex:2 1 220px;"><label>Qué compraste</label><input type="text" placeholder="Ej: Remeras blancas angelito" value="${nuevaCompra.descripcion}" oninput="nuevaCompra.descripcion=this.value"></div>
       <div class="field" style="flex:1 1 160px;"><label>Dónde / proveedor</label><input type="text" placeholder="Ej: Las Flores" value="${nuevaCompra.proveedor}" oninput="nuevaCompra.proveedor=this.value"></div>
       <div class="field" style="max-width:130px;"><label>Costo total</label><input type="number" min="0" placeholder="0" value="${nuevaCompra.costo}" oninput="nuevaCompra.costo=this.value"></div>
     </div>
     <div class="field"><label>Notas (opcional)</label><textarea rows="2" placeholder="Detalles extra..." oninput="nuevaCompra.notas=this.value">${nuevaCompra.notas}</textarea></div>
 
     <hr class="stitch">
-    <p class="section-note">Opcional: sumar esta compra directo al stock de un producto ya cargado.</p>
+    <p class="section-note">Sumá cada talle/variante que trajiste de esta compra (podés agregar varias líneas: talle 1, talle 2, etc.).</p>
     <div class="row">
       <div class="field" style="flex:2 1 200px;">
         <label>Producto</label>
-        <select onchange="nuevaCompra.productoId=this.value; nuevaCompra.varianteId=''; renderAll();">
-          <option value="">— No sumar a stock —</option>
-          ${state.productos.map(p=>`<option value="${p.id}" ${nuevaCompra.productoId===p.id?'selected':''}>${p.nombre}</option>`).join('')}
+        <select onchange="compraLineaProd=this.value; compraLineaVar=''; renderAll();">
+          <option value="">Elegí un producto</option>
+          ${state.productos.map(p=>`<option value="${p.id}" ${compraLineaProd===p.id?'selected':''}>${p.nombre}</option>`).join('')}
         </select>
       </div>
       <div class="field" style="flex:1 1 160px;">
         <label>Variante</label>
-        <select onchange="nuevaCompra.varianteId=this.value" ${!prod?'disabled':''}>
+        <select onchange="compraLineaVar=this.value" ${!prodLinea?'disabled':''}>
           <option value="">Elegí variante</option>
-          ${prod ? prod.variantes.map(v=>`<option value="${v.id}" ${nuevaCompra.varianteId===v.id?'selected':''}>${v.talle} ${v.color}</option>`).join('') : ''}
+          ${prodLinea ? prodLinea.variantes.map(v=>`<option value="${v.id}" ${compraLineaVar===v.id?'selected':''}>${v.talle} ${v.color}${v.codigo?(' ['+v.codigo+']'):''}</option>`).join('') : ''}
         </select>
       </div>
-      <div class="field" style="max-width:110px;"><label>Cantidad</label><input type="number" min="0" value="${nuevaCompra.cantidad}" oninput="nuevaCompra.cantidad=this.value"></div>
+      <div class="field" style="max-width:100px;"><label>Cantidad</label><input type="number" min="1" value="${compraLineaCant}" onchange="compraLineaCant=parseInt(this.value)||1;"></div>
+      <div class="field" style="flex:0 0 auto;justify-content:flex-end;">
+        <button class="btn small primary" ${(!compraLineaProd||!compraLineaVar)?'disabled':''} onclick="agregarLineaCompra()">+ Agregar línea</button>
+      </div>
     </div>
-    <button class="btn primary" onclick="registrarCompra()">Registrar compra</button>
+
+    ${compraLineas.length ? `
+    <table><thead><tr><th>Producto</th><th>Variante</th><th>Cantidad</th><th></th></tr></thead>
+    <tbody>${compraLineas.map((l,idx)=>`<tr><td>${l.nombre}</td><td>${l.varianteLabel}</td><td class="num">${l.cantidad}</td><td><button class="link-btn" onclick="quitarLineaCompra(${idx})">quitar</button></td></tr>`).join('')}</tbody></table>
+    ` : '<p class="empty">Todavía no agregaste ninguna línea (esto es opcional si solo querés dejar la nota, sin sumar stock).</p>'}
+
+    <button class="btn primary" style="margin-top:10px;" onclick="registrarCompra()">Registrar compra</button>
   </div>
 
   <div class="card">
     <div class="card-title">Historial de compras</div>
-    ${compras.length===0 ? '<p class="empty">Todavía no registraste compras.</p>' : `
-    <table><thead><tr><th>Fecha</th><th>Descripción</th><th>Proveedor</th><th>Costo</th><th></th></tr></thead>
-    <tbody>${compras.map(c=>`<tr><td>${fmtDate(c.fecha)}</td><td>${c.descripcion}${c.notas?('<br><span class="muted" style="font-size:11.5px;">'+c.notas+'</span>'):''}</td><td>${c.proveedor||'-'}</td><td class="num">${money(c.costo)}</td><td><button class="link-btn" onclick="eliminarCompra('${c.id}')">eliminar</button></td></tr>`).join('')}</tbody></table>`}
+    ${compras.length===0 ? '<p class="empty">Todavía no registraste compras.</p>' : compras.map(c=>{
+      const lineas = c.lineas && c.lineas.length ? c.lineas : (c.productoId ? [{nombre:'', varianteLabel:'', cantidad:c.cantidad}] : []);
+      return `
+      <div style="padding:8px 0;border-bottom:1px dashed var(--line-soft);font-size:13.5px;">
+        <div style="display:flex;justify-content:space-between;gap:8px;">
+          <b>${fmtDate(c.fecha)} · ${c.descripcion}</b>
+          <span style="display:flex;align-items:center;gap:10px;">
+            <span class="num">${money(c.costo)}</span>
+            <button class="link-btn" onclick="eliminarCompra('${c.id}')">eliminar</button>
+          </span>
+        </div>
+        <div class="muted">${c.proveedor||'-'}${c.notas?(' · '+c.notas):''}</div>
+        ${lineas.length ? `<div class="muted" style="margin-top:2px;">${lineas.map(l=>l.cantidad+'x '+(l.nombre||'')+(l.varianteLabel?(' ('+l.varianteLabel+')'):'')).join(', ')}</div>` : ''}
+      </div>`;
+    }).join('')}
   </div>
   `;
 }
+
+function agregarLineaCompra(){
+  const p = state.productos.find(p=>p.id===compraLineaProd);
+  if(!p) return;
+  const v = p.variantes.find(v=>v.id===compraLineaVar);
+  if(!v) return;
+  compraLineas.push({
+    productoId:p.id, varianteId:v.id, nombre:p.nombre,
+    varianteLabel:[v.talle,v.color].filter(x=>x&&x!=='-').join(' / ')||'Único',
+    cantidad: Math.max(1, compraLineaCant||1)
+  });
+  compraLineaVar=''; compraLineaCant=1;
+  renderAll();
+}
+function quitarLineaCompra(idx){ compraLineas.splice(idx,1); renderAll(); }
 
 function registrarCompra(){
   if(!nuevaCompra.descripcion.trim()){ showToast('Contame qué compraste'); return; }
   state.compras.push({
     id: uid(), fecha: nuevaCompra.fecha, descripcion: nuevaCompra.descripcion.trim(),
     proveedor: nuevaCompra.proveedor.trim(), costo: Number(nuevaCompra.costo)||0,
-    notas: nuevaCompra.notas.trim(), productoId: nuevaCompra.productoId||null, varianteId: nuevaCompra.varianteId||null,
-    cantidad: Number(nuevaCompra.cantidad)||0
+    notas: nuevaCompra.notas.trim(), lineas: compraLineas.map(l=>({...l}))
   });
-  if(nuevaCompra.productoId && nuevaCompra.varianteId && Number(nuevaCompra.cantidad)>0){
-    const p = state.productos.find(p=>p.id===nuevaCompra.productoId);
-    const v = p.variantes.find(v=>v.id===nuevaCompra.varianteId);
-    v.stock += Number(nuevaCompra.cantidad);
-    showToast('Compra registrada y stock actualizado');
-  }else{
-    showToast('Compra registrada');
-  }
+  compraLineas.forEach(l=>{
+    const p = state.productos.find(p=>p.id===l.productoId);
+    const v = p ? p.variantes.find(v=>v.id===l.varianteId) : null;
+    if(v) v.stock += l.cantidad;
+  });
   save();
-  nuevaCompra = {fecha: todayStr(), descripcion:'', proveedor:'', costo:'', notas:'', productoId:'', varianteId:'', cantidad:''};
+  showToast(compraLineas.length ? 'Compra registrada y stock actualizado' : 'Compra registrada');
+  nuevaCompra = {fecha: todayStr(), descripcion:'', proveedor:'', costo:'', notas:''};
+  compraLineas = [];
   renderAll();
 }
 function eliminarCompra(id){
   const c = state.compras.find(c=>c.id===id);
   if(!c) return;
   if(!confirm('¿Eliminar esta compra del historial?')) return;
-  if(c.productoId && c.varianteId && c.cantidad>0){
-    if(confirm('Esta compra había sumado '+c.cantidad+' unidades de stock. ¿Querés restarlas también del stock actual?')){
-      const p = state.productos.find(p=>p.id===c.productoId);
-      const v = p ? p.variantes.find(v=>v.id===c.varianteId) : null;
-      if(v) v.stock = Math.max(0, v.stock - c.cantidad);
-    }
+  const lineas = c.lineas && c.lineas.length ? c.lineas : (c.productoId && c.cantidad>0 ? [{productoId:c.productoId, varianteId:c.varianteId, cantidad:c.cantidad}] : []);
+  if(lineas.length && confirm('Esta compra había sumado stock ('+lineas.reduce((a,l)=>a+l.cantidad,0)+' unidades en total). ¿Querés restarlas también del stock actual?')){
+    lineas.forEach(l=>{
+      const p = state.productos.find(p=>p.id===l.productoId);
+      const v = p ? p.variantes.find(v=>v.id===l.varianteId) : null;
+      if(v) v.stock = Math.max(0, v.stock - l.cantidad);
+    });
   }
   state.compras = state.compras.filter(x=>x.id!==id);
   save();
@@ -1287,6 +1559,12 @@ function renderAjustes(){
   </div>
 
   <div class="card">
+    <div class="card-title">Planilla de stock</div>
+    <p class="section-note" style="margin-top:-4px;">Descargá todo tu stock actual (producto, talle, color, código y cantidad) como planilla de Excel.</p>
+    <button class="btn primary" onclick="exportarStockExcel()">Descargar stock (Excel)</button>
+  </div>
+
+  <div class="card">
     <div class="card-title">Zona de riesgo</div>
     <button class="btn danger" onclick="borrarTodo()">Borrar todos los datos</button>
   </div>
@@ -1314,6 +1592,26 @@ function eliminarCategoria(cat){
 function exportarDatos(){
   const contenido = JSON.stringify(state,null,2);
   descargarArchivo('zero-zed-backup-'+todayStr()+'.json', contenido, 'application/json');
+}
+async function exportarStockExcel(){
+  if(typeof XLSX === 'undefined'){ showToast('El generador de Excel sigue cargando, probá de nuevo en un segundo'); return; }
+  const filas = [];
+  state.productos.forEach(p=>{
+    if(p.variantes.length===0){
+      filas.push({Categoria:p.categoria, Producto:p.nombre, Descripcion:p.descripcion||'', Codigo:'', Talle:'', Color:'', Costo:p.costo, Precio:p.precio, Stock:0});
+    }else{
+      p.variantes.forEach(v=>{
+        filas.push({Categoria:p.categoria, Producto:p.nombre, Descripcion:p.descripcion||'', Codigo:v.codigo||'', Talle:v.talle||'', Color:v.color||'', Costo:p.costo, Precio:p.precio, Stock:v.stock});
+      });
+    }
+  });
+  if(filas.length===0){ showToast('Todavía no cargaste productos'); return; }
+  const ws = XLSX.utils.json_to_sheet(filas);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Stock');
+  const arrayBuf = XLSX.write(wb, {type:'array', bookType:'xlsx'});
+  const blob = new Blob([arrayBuf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  await descargarArchivo('zero-zed-stock-'+todayStr()+'.xlsx', blob, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 }
 function importarDatos(event){
   const file = event.target.files[0];
