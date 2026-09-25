@@ -394,6 +394,58 @@ function showToast(msg){
   clearTimeout(window._toastTimer);
   window._toastTimer = setTimeout(()=>t.classList.remove('show'), 2200);
 }
+function actualizarBusqueda(tipo, input){
+  const valor = input.value;
+  const posicion = input.selectionStart;
+  if(tipo==='venta') ventaSearch = valor;
+  if(tipo==='stock') stockSearch = valor;
+  if(tipo==='venta') ventaClaveConsultada = '';
+  if(tipo==='stock') stockClaveConsultada = '';
+  renderAll();
+  requestAnimationFrame(()=>{
+    const nuevoInput = document.querySelector('[data-search="'+tipo+'"]');
+    if(!nuevoInput) return;
+    nuevoInput.focus();
+    nuevoInput.setSelectionRange(posicion, posicion);
+  });
+}
+function buscarClaveConEnter(tipo, event, input){
+  if(event.key!=='Enter') return;
+  event.preventDefault();
+  const clave = input.value.trim();
+  if(tipo==='venta') ventaClaveConsultada = clave;
+  if(tipo==='stock') stockClaveConsultada = clave;
+  renderAll();
+}
+function actualizarFiltroCompras(input){
+  const posicion = input.selectionStart;
+  comprasLugarFiltro = input.value;
+  renderAll();
+  requestAnimationFrame(()=>{
+    const nuevoInput = document.querySelector('[data-compras-lugar]');
+    if(!nuevoInput) return;
+    nuevoInput.focus();
+    nuevoInput.setSelectionRange(posicion, posicion);
+  });
+}
+function renderHistorialClave(clave){
+  if(!clave) return '';
+  const termino = clave.toLowerCase();
+  const coincidencias = [];
+  state.productos.forEach(p=>p.variantes.forEach(v=>{
+    if((v.codigo||'').toLowerCase().includes(termino)) coincidencias.push({p,v});
+  }));
+  return `
+    <div class="card" style="margin-top:10px;">
+      <div class="card-title">Historial de prendas con clave "${clave}"</div>
+      ${coincidencias.length===0 ? '<p class="empty">No hay prendas con esa clave.</p>' : `
+      <table><thead><tr><th>Prenda</th><th>Categoría</th><th>Clave</th><th>Talle / color</th><th>Stock</th></tr></thead>
+      <tbody>${coincidencias.map(({p,v})=>`<tr>
+        <td>${p.nombre}</td><td>${p.categoria||'-'}</td><td class="num">${v.codigo||'-'}</td>
+        <td>${[v.talle,v.color].filter(Boolean).join(' / ')||'Único'}</td><td class="num">${v.stock}</td>
+      </tr>`).join('')}</tbody></table>`}
+    </div>`;
+}
 function turnoAbierto(){ return state.turnos.find(t=>t.abierto); }
 function ventasDe(fecha){ return state.ventas.filter(v=>v.fecha===fecha); }
 
@@ -602,7 +654,7 @@ function renderLogin(){
 
 /* =================== VENDER =================== */
 let cart = [];
-let ventaSelCat = '', ventaSelProd = '', ventaSelVar = '', ventaSelQty = 1, ventaMetodo = 'Efectivo', ventaSearch = '';
+let ventaSelCat = '', ventaSelProd = '', ventaSelVar = '', ventaSelQty = 1, ventaMetodo = 'Efectivo', ventaSearch = '', ventaClaveConsultada = '';
 
 function renderVender(){
   const t = turnoAbierto();
@@ -635,7 +687,7 @@ function renderVender(){
     prodsFiltrados = prodsFiltrados.filter(p=>
       p.nombre.toLowerCase().includes(term) ||
       (p.descripcion||'').toLowerCase().includes(term) ||
-      p.categoria.toLowerCase().includes(term) ||
+      p.id.toLowerCase().includes(term) ||
       p.variantes.some(v=>(v.codigo||'').toLowerCase().includes(term))
     );
   }
@@ -661,11 +713,11 @@ function renderVender(){
     <div class="card-title">Agregar producto</div>
     <div class="row">
       <div class="field" style="flex:2 1 200px;">
-        <label>Buscar</label>
-        <input type="text" placeholder="Nombre, diseño o categoría..." value="${ventaSearch}" oninput="ventaSearch=this.value; ventaSelProd=''; ventaSelVar=''; renderAll();">
+        <label>Buscar por clave o nombre</label>
+        <input type="text" data-search="venta" placeholder="Ej: REM-SAK o jean..." value="${ventaSearch}" aria-label="Buscar por clave o nombre" oninput="ventaSelProd=''; ventaSelVar=''; actualizarBusqueda('venta', this);" onkeydown="buscarClaveConEnter('venta', event, this);">
       </div>
       <div class="field">
-        <label>Categoría</label>
+        <label>Filtrar por categoría</label>
         <select onchange="ventaSelCat=this.value; ventaSelProd=''; ventaSelVar=''; renderAll();">
           <option value="">Todas</option>
           ${categorias.map(c=>`<option value="${c}" ${ventaSelCat===c?'selected':''}>${c}</option>`).join('')}
@@ -690,6 +742,7 @@ function renderVender(){
         <input type="number" min="1" value="${ventaSelQty}" onchange="ventaSelQty=parseInt(this.value)||1; renderAll();">
       </div>
     </div>
+    ${renderHistorialClave(ventaClaveConsultada)}
     <button class="btn primary" ${(!prodSel||!varSel)?'disabled':''} onclick="agregarAlCarrito()">+ Agregar a la venta</button>
   </div>
 
@@ -742,7 +795,7 @@ function agregarAlCarrito(){
   }
   cart.push({
     productoId:p.id, nombre:p.nombre + (p.descripcion?(' ('+p.descripcion+')'):''), categoria:p.categoria,
-    varianteId:v.id, varianteLabel:[v.talle,v.color].filter(x=>x&&x!=='-').join(' / ')||'Único',
+    varianteId:v.id, codigo:v.codigo||'', talle:v.talle||'', color:v.color||'', varianteLabel:[v.talle,v.color].filter(x=>x&&x!=='-').join(' / ')||'Único',
     cantidad:qty, precioUnit:p.precio
   });
   ventaSelQty = 1;
@@ -782,7 +835,7 @@ let showNuevoProducto = false;
 let nuevoProd = {nombre:'', descripcion:'', categoria:'', costo:'', precio:''};
 let addVarianteFormFor = null;
 let nuevaVariante = {talle:'', color:'', stock:'', codigo:''};
-let stockSearch = '';
+let stockSearch = '', stockClaveConsultada = '';
 let stockCategoryFilter = '';
 
 function renderStock(){
@@ -796,7 +849,7 @@ function renderStock(){
     productosFiltrados = productosFiltrados.filter(p=>
       p.nombre.toLowerCase().includes(term) ||
       (p.descripcion||'').toLowerCase().includes(term) ||
-      p.categoria.toLowerCase().includes(term) ||
+      p.id.toLowerCase().includes(term) ||
       p.variantes.some(v=>(v.codigo||'').toLowerCase().includes(term))
     );
   }
@@ -814,10 +867,12 @@ function renderStock(){
   <p class="section-note">Tus productos, talles/colores y cantidades disponibles.</p>
 
   <div class="field" style="max-width:340px;">
-    <label>Buscar producto</label>
-    <input type="text" placeholder="Nombre, diseño o categoría..." value="${stockSearch}" oninput="stockSearch=this.value; renderAll();">
+    <label>Buscar por clave o nombre</label>
+    <input type="text" data-search="stock" placeholder="Ej: REM-SAK o jean..." value="${stockSearch}" aria-label="Buscar por clave o nombre" oninput="actualizarBusqueda('stock', this);" onkeydown="buscarClaveConEnter('stock', event, this);">
   </div>
+  ${renderHistorialClave(stockClaveConsultada)}
   <div class="cat-scroll">
+    <span class="muted" style="font-size:11.5px;align-self:center;flex:0 0 auto;">Filtrar por categoría:</span>
     <button class="cat-scroll-chip ${stockCategoryFilter===''?'active':''}" onclick="stockCategoryFilter=''; renderAll();">Todas</button>
     ${categorias.map(c=>`<button class="cat-scroll-chip ${stockCategoryFilter===c?'active':''}" onclick="stockCategoryFilter='${c.replace(/'/g,"\\'")}'; renderAll();">${c}</button>`).join('')}
   </div>
@@ -909,11 +964,12 @@ function renderProductoCard(p){
   </div>`;
 }
 
-function sugerirCodigoVariante(nombre, talle){
+function sugerirCodigoVariante(nombre, talle, color=''){
   const palabras = (nombre||'').trim().split(/\s+/).filter(Boolean).slice(0,2);
   const partes = palabras.map(w=>w.replace(/[^a-zA-Z0-9]/g,'').slice(0,3).toUpperCase());
   const talleLimpio = (talle||'').toString().trim().toUpperCase().replace(/\s+/g,'');
-  return [...partes, talleLimpio].filter(Boolean).join('-');
+  const colorLimpio = (color||'').toString().trim().replace(/[^a-zA-Z0-9]/g,'').slice(0,3).toUpperCase();
+  return [...partes, talleLimpio, colorLimpio].filter(Boolean).join('-');
 }
 
 function crearProducto(){
@@ -1273,6 +1329,8 @@ let historialFecha = todayStr();
 
 function renderHistorial(){
   const ventas = ventasDe(historialFecha);
+  const devoluciones = state.devoluciones.filter(d=>d.fecha===historialFecha);
+  const comprasReventa = state.compras.filter(c=>c.fecha===historialFecha);
   const turnosDia = state.turnos.filter(t=>t.fecha===historialFecha);
   const porMetodo = {}; METODOS.forEach(m=>porMetodo[m]=0);
   ventas.forEach(v=>porMetodo[v.metodoPago]+=v.total);
@@ -1301,6 +1359,8 @@ function renderHistorial(){
   <div class="top-summary">
     <div class="stat"><div class="v">${money(ventas.reduce((a,v)=>a+v.total,0))}</div><div class="l">Total vendido</div></div>
     <div class="stat"><div class="v">${ventas.length}</div><div class="l">Ventas</div></div>
+    <div class="stat"><div class="v">${devoluciones.length}</div><div class="l">Devoluciones</div></div>
+    <div class="stat"><div class="v">${money(comprasReventa.reduce((a,c)=>a+Number(c.costo||0),0))}</div><div class="l">Compras reventa</div></div>
     ${METODOS.map(m=>`<div class="stat"><div class="v">${money(porMetodo[m])}</div><div class="l">${m}</div></div>`).join('')}
   </div>
 
@@ -1327,6 +1387,32 @@ function renderHistorial(){
     `).join('')}
   </div>
 
+  <div class="card">
+    <div class="card-title">Devoluciones del día</div>
+    ${devoluciones.length===0 ? '<p class="empty">Sin devoluciones registradas ese día.</p>' : `
+    <table><thead><tr><th>Hora</th><th>Producto</th><th>Cant.</th><th>Motivo</th><th>Reintegro</th></tr></thead>
+    <tbody>${devoluciones.slice().reverse().map(d=>`<tr>
+      <td>${d.hora}</td>
+      <td>${d.nombre}${d.varianteLabel?(' ('+d.varianteLabel+')'):''}</td>
+      <td class="num">${d.cantidad}</td>
+      <td>${d.motivo||'-'}</td>
+      <td class="num">${d.reintegro==='Sin reintegro'?'-':money(d.montoDevuelto)+' ('+d.reintegro+')'}</td>
+    </tr>`).join('')}</tbody></table>`}
+  </div>
+
+  <div class="card">
+    <div class="card-title">Compras para reventa del día</div>
+    ${comprasReventa.length===0 ? '<p class="empty">Sin compras para reventa registradas ese día.</p>' : `
+    ${comprasReventa.slice().reverse().map(c=>{
+      const lineas = c.lineas && c.lineas.length ? c.lineas : [];
+      return `<div style="padding:8px 0;border-bottom:1px dashed var(--line-soft);font-size:13.5px;">
+        <div style="display:flex;justify-content:space-between;gap:8px;"><b>${c.descripcion}</b><span class="num">${money(c.costo)}</span></div>
+        <div class="muted">${c.proveedor||'-'}${c.notas?(' · '+c.notas):''}</div>
+        ${lineas.length ? `<div class="muted" style="margin-top:2px;">${lineas.map(l=>l.cantidad+'x '+l.nombre+(l.varianteLabel?(' ('+l.varianteLabel+')'):'')).join(', ')}</div>` : ''}
+      </div>`;
+    }).join('')}`}
+  </div>
+
   ${turnosDia.length ? `
   <div class="card">
     <div class="card-title">Turnos del día</div>
@@ -1342,23 +1428,67 @@ async function exportarVentasDia(){
   const ventas = ventasDe(fecha);
   const turnosDia = state.turnos.filter(t=>t.fecha===fecha);
   const wb = XLSX.utils.book_new();
-  ['Mañana','Tarde'].forEach(nombreTurno=>{
-    const turno = turnosDia.find(t=>t.turno===nombreTurno);
-    const ventasTurno = turno ? ventas.filter(v=>v.turnoId===turno.id) : [];
-    const filas = [];
-    ventasTurno.forEach(v=>{
-      v.items.forEach(i=>{
-        filas.push({Hora:v.hora, Metodo:v.metodoPago, Producto:i.nombre, Variante:i.varianteLabel||'', Cantidad:i.cantidad, PrecioUnit:i.precioUnit, Subtotal:i.cantidad*i.precioUnit});
-      });
+  const turnoDeVenta = venta => turnosDia.find(t=>t.id===venta.turnoId);
+  const nombreTurno = venta => turnoDeVenta(venta)?.turno || 'Sin turno asociado';
+  const datosVariante = item => {
+    const producto = state.productos.find(p=>p.id===item.productoId);
+    const variante = producto?.variantes.find(v=>v.id===item.varianteId);
+    return {
+      codigo: item.codigo || variante?.codigo || '',
+      talle: item.talle || variante?.talle || '',
+      color: item.color || variante?.color || ''
+    };
+  };
+  const filasVentas = [];
+  ventas.forEach(v=>v.items.forEach(i=>{
+    const variante = datosVariante(i);
+    filasVentas.push({
+      Fecha:fecha, Turno:nombreTurno(v), Hora:v.hora, VentaId:v.id,
+      Metodo:v.metodoPago, Producto:i.nombre, Codigo:variante.codigo,
+      Talle:variante.talle, Color:variante.color, Cantidad:i.cantidad,
+      PrecioUnit:i.precioUnit, Subtotal:i.cantidad*i.precioUnit
     });
-    const totalTurno = ventasTurno.reduce((a,v)=>a+v.total,0);
-    if(filas.length===0){
-      filas.push({Hora:'', Metodo:'', Producto:'Sin ventas registradas', Variante:'', Cantidad:'', PrecioUnit:'', Subtotal:''});
-    }
-    filas.push({Hora:'', Metodo:'', Producto:'', Variante:'TOTAL TURNO', Cantidad:'', PrecioUnit:'', Subtotal: totalTurno});
-    const ws = XLSX.utils.json_to_sheet(filas);
-    XLSX.utils.book_append_sheet(wb, ws, nombreTurno);
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filasVentas.length ? filasVentas : [{Fecha:fecha,Producto:'Sin ventas registradas'}]), 'Ventas');
+
+  const gastos = [];
+  turnosDia.forEach(t=>(t.gastos||[]).forEach(g=>gastos.push({Fecha:fecha, Turno:t.turno, Hora:g.hora, Descripcion:g.desc, Monto:g.monto})));
+  const comprasReventa = state.compras.filter(c=>c.fecha===fecha);
+  const filasCompras = [];
+  comprasReventa.forEach(c=>{
+    const lineas = c.lineas && c.lineas.length ? c.lineas : [{nombre:c.descripcion, varianteLabel:'', cantidad:''}];
+    lineas.forEach(l=>filasCompras.push({Fecha:fecha, Descripcion:c.descripcion, Proveedor:c.proveedor||'', Producto:l.nombre||'', Variante:l.varianteLabel||'', Cantidad:l.cantidad, CostoTotal:c.costo, Notas:c.notas||''}));
   });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filasCompras.length ? filasCompras : [{Fecha:fecha,Descripcion:'Sin compras para reventa registradas'}]), 'Compras reventa');
+  const devoluciones = state.devoluciones.filter(d=>d.fecha===fecha).map(d=>({
+    Fecha:fecha, Turno:turnosDia.find(t=>t.id===d.turnoId)?.turno||'Sin turno asociado', Hora:d.hora, Producto:d.nombre, Variante:d.varianteLabel||'', Codigo:d.codigo||'', Cantidad:d.cantidad,
+    Motivo:d.motivo||'', Reintegro:d.reintegro, Monto:d.reintegro==='Sin reintegro'?0:d.montoDevuelto
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(devoluciones.length ? devoluciones : [{Hora:'',Producto:'Sin devoluciones registradas'}]), 'Devoluciones');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(gastos.length ? gastos : [{Hora:'',Descripcion:'Sin gastos registrados'}]), 'Gastos');
+
+  const totalVendido = ventas.reduce((a,v)=>a+Number(v.total||0),0);
+  const totalGastos = gastos.reduce((a,g)=>a+Number(g.Monto||0),0);
+  const totalComprasReventa = comprasReventa.reduce((a,c)=>a+Number(c.costo||0),0);
+  const totalDevuelto = devoluciones.reduce((a,d)=>a+Number(d.Monto||0),0);
+  const totalNeto = totalVendido-totalGastos-totalComprasReventa;
+  const resumen = [
+    {Concepto:'Total vendido', Cantidad:ventas.length, Monto:totalVendido},
+    {Concepto:'Total gastos y reintegros', Cantidad:gastos.length, Monto:totalGastos},
+    {Concepto:'Total compras para reventa', Cantidad:comprasReventa.length, Monto:totalComprasReventa},
+    {Concepto:'Total devoluciones', Cantidad:devoluciones.length, Monto:totalDevuelto},
+    {Concepto:'Neto del día (ventas - gastos - compras)', Cantidad:'', Monto:totalNeto}
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumen), 'Resumen');
+
+  const cierre = turnosDia.map(t=>{
+    const ventasTurno = ventas.filter(v=>v.turnoId===t.id);
+    const gastosTurno = (t.gastos||[]).reduce((a,g)=>a+Number(g.monto||0),0);
+    const efectivo = ventasTurno.filter(v=>v.metodoPago==='Efectivo').reduce((a,v)=>a+Number(v.total||0),0);
+    const esperado = Number(t.cambioInicial||0)+efectivo-gastosTurno;
+    return {Fecha:fecha, Turno:t.turno, Apertura:t.horaApertura, Cierre:t.horaCierre||'Abierto', CambioInicial:Number(t.cambioInicial||0), TotalVendido:ventasTurno.reduce((a,v)=>a+Number(v.total||0),0), EfectivoVendido:efectivo, Gastos:gastosTurno, EfectivoEsperado:esperado, EfectivoContado:t.cambioFinal==null?'':t.cambioFinal, Diferencia:t.cambioFinal==null?'':Number(t.cambioFinal)-esperado};
+  });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cierre.length ? cierre : [{Fecha:fecha,Turno:'Sin turnos registrados'}]), 'Cierre de caja');
   const arrayBuf = XLSX.write(wb, {type:'array', bookType:'xlsx'});
   const blob = new Blob([arrayBuf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   await descargarArchivo('zero-zed-ventas-'+fecha+'.xlsx', blob, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -1370,26 +1500,47 @@ let compraLineaProd = '';
 let compraLineaVar = '';
 let compraLineaCant = 1;
 let compraLineas = []; // [{productoId, varianteId, nombre, varianteLabel, cantidad}]
+let compraRapida = {nombre:'', categoria:'', descripcion:'', talle:'', color:'', codigo:'', costo:'', precio:'', cantidad:1};
+let comprasLugarFiltro = '';
 
 function renderCompras(){
   const prodLinea = state.productos.find(p=>p.id===compraLineaProd);
   const compras = state.compras.slice().reverse();
+  const comprasFiltradas = comprasLugarFiltro.trim() ? compras.filter(c=>(c.proveedor||'').toLowerCase().includes(comprasLugarFiltro.trim().toLowerCase())) : compras;
   return `
   <h2 class="section-title">Compras</h2>
-  <p class="section-note">Anotá dónde compraste cada cosa: "remeras angelito, compradas en Las Flores", con cada talle que trajiste.</p>
+  <p class="section-note">Registrá todo lo que comprás para revender. Al confirmar, cada línea suma automáticamente su cantidad al stock de esa variante.</p>
 
   <div class="card">
     <div class="card-title">Nueva compra</div>
     <div class="row">
       <div class="field" style="max-width:150px;"><label>Fecha</label><input type="date" value="${nuevaCompra.fecha}" onchange="nuevaCompra.fecha=this.value"></div>
       <div class="field" style="flex:2 1 220px;"><label>Qué compraste</label><input type="text" placeholder="Ej: Remeras blancas angelito" value="${nuevaCompra.descripcion}" oninput="nuevaCompra.descripcion=this.value"></div>
-      <div class="field" style="flex:1 1 160px;"><label>Dónde / proveedor</label><input type="text" placeholder="Ej: Las Flores" value="${nuevaCompra.proveedor}" oninput="nuevaCompra.proveedor=this.value"></div>
+      <div class="field" style="flex:1 1 220px;"><label>Lugar / proveedor / dirección</label><input type="text" placeholder="Ej: Las Flores · Local 321 · Av. Rivadavia 1231" value="${nuevaCompra.proveedor}" oninput="nuevaCompra.proveedor=this.value"></div>
       <div class="field" style="max-width:130px;"><label>Costo total</label><input type="number" min="0" placeholder="0" value="${nuevaCompra.costo}" oninput="nuevaCompra.costo=this.value"></div>
     </div>
     <div class="field"><label>Notas (opcional)</label><textarea rows="2" placeholder="Detalles extra..." oninput="nuevaCompra.notas=this.value">${nuevaCompra.notas}</textarea></div>
 
     <hr class="stitch">
-    <p class="section-note">Sumá cada talle/variante que trajiste de esta compra (podés agregar varias líneas: talle 1, talle 2, etc.).</p>
+    <div class="card-title">Carga rápida de prendas</div>
+    <p class="section-note">Completá una variante por vez. Si la prenda o la variante no existen, se crean automáticamente. Repetí la operación para cada talle y color.</p>
+    <div class="row">
+      <div class="field" style="flex:2 1 220px;"><label>Prenda</label><input type="text" placeholder="Ej: Remera lisa bordado Corteiz" value="${compraRapida.nombre}" oninput="compraRapida.nombre=this.value"></div>
+      <div class="field"><label>Categoría</label><select onchange="compraRapida.categoria=this.value"><option value="">Elegí categoría</option>${state.config.categorias.map(c=>`<option value="${c}" ${compraRapida.categoria===c?'selected':''}>${c}</option>`).join('')}</select></div>
+      <div class="field"><label>Talle</label><input type="text" placeholder="1, 2, 3" value="${compraRapida.talle}" oninput="compraRapida.talle=this.value"></div>
+      <div class="field"><label>Color</label><input type="text" placeholder="Negro / Blanco" value="${compraRapida.color}" oninput="compraRapida.color=this.value"></div>
+      <div class="field" style="max-width:100px;"><label>Cantidad</label><input type="number" min="1" value="${compraRapida.cantidad}" oninput="compraRapida.cantidad=this.value"></div>
+      <div class="field" style="flex:1 1 150px;"><label>Clave (opcional)</label><input type="text" placeholder="REM-COR-1-N" value="${compraRapida.codigo}" oninput="compraRapida.codigo=this.value"></div>
+    </div>
+    <div class="row">
+      <div class="field" style="flex:2 1 220px;"><label>Descripción / diseño (opcional)</label><input type="text" placeholder="Ej: bordado Corteiz" value="${compraRapida.descripcion}" oninput="compraRapida.descripcion=this.value"></div>
+      <div class="field"><label>Costo unitario</label><input type="number" min="0" placeholder="0" value="${compraRapida.costo}" oninput="compraRapida.costo=this.value"></div>
+      <div class="field"><label>Precio de venta</label><input type="number" min="0" placeholder="0" value="${compraRapida.precio}" oninput="compraRapida.precio=this.value"></div>
+      <div class="field" style="flex:0 0 auto;justify-content:flex-end;"><button class="btn small primary" onclick="agregarCompraRapida()">Agregar variante</button></div>
+    </div>
+
+    <hr class="stitch">
+    <p class="section-note">También podés elegir un producto y variante que ya existan:</p>
     <div class="row">
       <div class="field" style="flex:2 1 200px;">
         <label>Producto</label>
@@ -1421,7 +1572,11 @@ function renderCompras(){
 
   <div class="card">
     <div class="card-title">Historial de compras</div>
-    ${compras.length===0 ? '<p class="empty">Todavía no registraste compras.</p>' : compras.map(c=>{
+    <div class="field" style="max-width:420px;">
+      <label>Buscar compras por lugar o proveedor</label>
+      <input type="text" data-compras-lugar placeholder="Ej: Las Flores o Av. Rivadavia" value="${comprasLugarFiltro}" oninput="actualizarFiltroCompras(this)">
+    </div>
+    ${compras.length===0 ? '<p class="empty">Todavía no registraste compras.</p>' : comprasFiltradas.length===0 ? '<p class="empty">No hay compras registradas en ese lugar.</p>' : comprasFiltradas.map(c=>{
       const lineas = c.lineas && c.lineas.length ? c.lineas : (c.productoId ? [{nombre:'', varianteLabel:'', cantidad:c.cantidad}] : []);
       return `
       <div style="padding:8px 0;border-bottom:1px dashed var(--line-soft);font-size:13.5px;">
@@ -1451,6 +1606,39 @@ function agregarLineaCompra(){
     cantidad: Math.max(1, compraLineaCant||1)
   });
   compraLineaVar=''; compraLineaCant=1;
+  renderAll();
+}
+function agregarCompraRapida(){
+  const nombre = compraRapida.nombre.trim();
+  if(!nombre){ showToast('Escribí el nombre de la prenda'); return; }
+  const cantidad = Math.max(1, parseInt(compraRapida.cantidad)||0);
+  const categoria = compraRapida.categoria || state.config.categorias[0] || 'Otros';
+  let producto = state.productos.find(p=>p.nombre.toLowerCase()===nombre.toLowerCase());
+  if(!producto){
+    producto = {id:uid(), nombre, descripcion:compraRapida.descripcion.trim(), categoria, costo:Number(compraRapida.costo)||0, precio:Number(compraRapida.precio)||0, variantes:[]};
+    state.productos.push(producto);
+  }else{
+    if(compraRapida.descripcion.trim()) producto.descripcion = compraRapida.descripcion.trim();
+    if(compraRapida.costo!=='') producto.costo = Number(compraRapida.costo)||0;
+    if(compraRapida.precio!=='') producto.precio = Number(compraRapida.precio)||0;
+    producto.categoria = categoria;
+  }
+  if(!state.config.categorias.some(c=>c.toLowerCase()===categoria.toLowerCase())) state.config.categorias.push(categoria);
+  const talles = (compraRapida.talle.trim() || 'Único').split(/[,;]+/).map(x=>x.trim()).filter(Boolean);
+  const colores = (compraRapida.color.trim() || '').split(/[,;]+/).map(x=>x.trim()).filter(Boolean);
+  const coloresFinales = colores.length ? colores : [''];
+  const codigoBase = compraRapida.codigo.trim().toUpperCase();
+  talles.forEach(talle=>coloresFinales.forEach(color=>{
+    const tienePlantilla = codigoBase.includes('{TALLE}') || codigoBase.includes('{COLOR}');
+    const codigoGenerado = codigoBase ? (tienePlantilla ? codigoBase.replace('{TALLE}', talle.toUpperCase()).replace('{COLOR}', color.toUpperCase()) : codigoBase+'-'+talle.toUpperCase()+(color?'-'+color.toUpperCase():'')) : sugerirCodigoVariante(producto.nombre, talle, color);
+    let variante = producto.variantes.find(v=>codigoGenerado ? v.codigo===codigoGenerado : v.talle.toLowerCase()===talle.toLowerCase() && v.color.toLowerCase()===color.toLowerCase());
+    if(!variante){ variante = {id:uid(), talle, color, codigo:codigoGenerado, stock:0}; producto.variantes.push(variante); }
+    const existente = compraLineas.find(l=>l.varianteId===variante.id);
+    if(existente) existente.cantidad += cantidad;
+    else compraLineas.push({productoId:producto.id, varianteId:variante.id, nombre:producto.nombre, varianteLabel:[talle,color].filter(Boolean).join(' / ')||'Único', cantidad});
+  }));
+  compraRapida.talle=''; compraRapida.color=''; compraRapida.codigo=''; compraRapida.cantidad=1;
+  showToast(talles.length*coloresFinales.length+' variante(s) agregada(s) a la compra');
   renderAll();
 }
 function quitarLineaCompra(idx){ compraLineas.splice(idx,1); renderAll(); }
@@ -1560,8 +1748,12 @@ function renderAjustes(){
 
   <div class="card">
     <div class="card-title">Planilla de stock</div>
-    <p class="section-note" style="margin-top:-4px;">Descargá todo tu stock actual (producto, talle, color, código y cantidad) como planilla de Excel.</p>
+    <p class="section-note" style="margin-top:-4px;">Descargá el stock como Excel o cargá una planilla para crear productos y actualizar cantidades.</p>
     <button class="btn primary" onclick="exportarStockExcel()">Descargar stock (Excel)</button>
+    <label class="btn ghost" style="cursor:pointer;margin-left:6px;">Importar stock (Excel)
+      <input type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv" style="display:none;" onchange="importarStockExcel(event)">
+    </label>
+    <p class="section-note" style="margin:10px 0 0;">Columnas: Producto, Categoria, Descripcion, Codigo, Talle, Color, Costo, Precio y Stock. Las filas existentes se actualizan; las nuevas se agregan.</p>
   </div>
 
   <div class="card">
@@ -1613,6 +1805,60 @@ async function exportarStockExcel(){
   const blob = new Blob([arrayBuf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   await descargarArchivo('zero-zed-stock-'+todayStr()+'.xlsx', blob, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 }
+function valorColumna(row, nombres){
+  const clave = Object.keys(row).find(k=>nombres.includes(k.toString().trim().toLowerCase()));
+  return clave===undefined ? '' : row[clave];
+}
+function textoExcel(value){ return value===undefined || value===null ? '' : String(value).trim(); }
+function importarStockExcel(event){
+  const file = event.target.files[0];
+  event.target.value = '';
+  if(!file) return;
+  if(typeof XLSX === 'undefined'){ showToast('El lector de Excel sigue cargando, probá de nuevo en un segundo'); return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    try{
+      const libro = XLSX.read(reader.result, {type:'array'});
+      const hoja = libro.Sheets[libro.SheetNames[0]];
+      const filas = XLSX.utils.sheet_to_json(hoja, {defval:''});
+      if(!filas.length) throw new Error('sin filas');
+      let actualizadas = 0; let creadas = 0;
+      filas.forEach(row=>{
+        const nombre = textoExcel(valorColumna(row,['producto','nombre']));
+        if(!nombre) return;
+        const categoria = textoExcel(valorColumna(row,['categoria','categoría'])) || 'Otros';
+        const descripcion = textoExcel(valorColumna(row,['descripcion','descripción']));
+        const codigo = textoExcel(valorColumna(row,['codigo','código'])).toUpperCase();
+        const talle = textoExcel(valorColumna(row,['talle','talla'])) || 'Único';
+        const color = textoExcel(valorColumna(row,['color']));
+        const stockTexto = valorColumna(row,['stock','cantidad']);
+        const stock = Math.max(0, Number(stockTexto)||0);
+        const costoTexto = valorColumna(row,['costo','costo unitario']);
+        const precioTexto = valorColumna(row,['precio','precio de venta']);
+        let producto = state.productos.find(p=>p.nombre.toLowerCase()===nombre.toLowerCase());
+        if(!producto){
+          producto = {id:uid(), nombre, descripcion, categoria, costo:Number(costoTexto)||0, precio:Number(precioTexto)||0, variantes:[]};
+          state.productos.push(producto); creadas++;
+        }else{
+          if(descripcion) producto.descripcion = descripcion;
+          if(categoria) producto.categoria = categoria;
+          if(costoTexto!=='') producto.costo = Number(costoTexto)||0;
+          if(precioTexto!=='') producto.precio = Number(precioTexto)||0;
+        }
+        if(!state.config.categorias.some(c=>c.toLowerCase()===categoria.toLowerCase())) state.config.categorias.push(categoria);
+        let variante = producto.variantes.find(v=>codigo ? v.codigo===codigo : v.talle.toLowerCase()===talle.toLowerCase() && v.color.toLowerCase()===color.toLowerCase());
+        if(!variante){ variante = {id:uid(), talle, color, codigo, stock}; producto.variantes.push(variante); }
+        else variante.stock = stock;
+        actualizadas++;
+      });
+      if(!actualizadas) throw new Error('sin productos válidos');
+      save();
+      showToast('Stock importado: '+actualizadas+' fila(s), '+creadas+' producto(s) nuevo(s)');
+      renderAll();
+    }catch(e){ showToast('No se pudo leer la planilla. Usá la plantilla del botón Descargar stock.'); }
+  };
+  reader.readAsArrayBuffer(file);
+}
 function importarDatos(event){
   const file = event.target.files[0];
   if(!file) return;
@@ -1623,6 +1869,7 @@ function importarDatos(event){
       if(!data.productos || !data.ventas) throw new Error('formato inválido');
       if(!data.config.categorias) data.config.categorias = DEFAULT_CATEGORIAS.slice();
       if(!data.config.pins) data.config.pins = { admin:"1234", empleado:"0000" };
+      if(!data.devoluciones) data.devoluciones = [];
       state = data;
       save();
       showToast('Datos importados');
