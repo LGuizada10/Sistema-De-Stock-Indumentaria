@@ -286,6 +286,7 @@
 <script>
 /* ---------- estado ---------- */
 const STORAGE_KEY = 'controlLocal_zerozed_v1';
+const STORAGE_BACKUP_KEY = 'controlLocal_zerozed_backup_v1';
 const LOGO_DATA_URI = 'data:image/png;base64,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';
 
 let downloadsCap = null;
@@ -343,15 +344,31 @@ function defaultState(){
 }
 let state;
 try{
-  const raw = localStorage.getItem(STORAGE_KEY);
-  state = raw ? JSON.parse(raw) : defaultState();
+  let raw = localStorage.getItem(STORAGE_KEY);
+  try{ state = raw ? JSON.parse(raw) : null; }catch(e){ state = null; }
+  if(!state){
+    raw = localStorage.getItem(STORAGE_BACKUP_KEY);
+    try{ state = raw ? JSON.parse(raw) : defaultState(); }catch(e){ state = defaultState(); }
+  }
   if(!state.config.categorias) state.config.categorias = DEFAULT_CATEGORIAS.slice();
   if(!state.config.pins) state.config.pins = { admin:"1234", empleado:"0000" };
   if(!state.devoluciones) state.devoluciones = [];
 }catch(e){ state = defaultState(); }
 
 function save(){
-  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){ console.error('No se pudo guardar', e); }
+  const serialized = JSON.stringify(state);
+  try{
+    const anterior = localStorage.getItem(STORAGE_KEY);
+    if(anterior){
+      try{ localStorage.setItem(STORAGE_BACKUP_KEY, anterior); }catch(e){}
+    }
+    localStorage.setItem(STORAGE_KEY, serialized);
+  }catch(e){
+    try{
+      localStorage.removeItem(STORAGE_BACKUP_KEY);
+      localStorage.setItem(STORAGE_KEY, serialized);
+    }catch(error){ console.error('No se pudo guardar', error); }
+  }
 }
 
 /* ---------- sesión / roles ---------- */
@@ -395,19 +412,12 @@ function showToast(msg){
   window._toastTimer = setTimeout(()=>t.classList.remove('show'), 2200);
 }
 function actualizarBusqueda(tipo, input){
-  const valor = input.value;
-  const posicion = input.selectionStart;
-  if(tipo==='venta') ventaSearch = valor;
-  if(tipo==='stock') stockSearch = valor;
+  if(tipo==='venta') ventaSearch = input.value;
+  if(tipo==='stock') stockSearch = input.value;
   if(tipo==='venta') ventaClaveConsultada = '';
   if(tipo==='stock') stockClaveConsultada = '';
-  renderAll();
-  requestAnimationFrame(()=>{
-    const nuevoInput = document.querySelector('[data-search="'+tipo+'"]');
-    if(!nuevoInput) return;
-    nuevoInput.focus();
-    nuevoInput.setSelectionRange(posicion, posicion);
-  });
+  if(tipo==='venta') actualizarResultadosVenta();
+  if(tipo==='stock') actualizarResultadosStock();
 }
 function buscarClaveConEnter(tipo, event, input){
   if(event.key!=='Enter') return;
@@ -415,7 +425,8 @@ function buscarClaveConEnter(tipo, event, input){
   const clave = input.value.trim();
   if(tipo==='venta') ventaClaveConsultada = clave;
   if(tipo==='stock') stockClaveConsultada = clave;
-  renderAll();
+  const panel = document.getElementById(tipo==='venta'?'ventaClaveResultado':'stockClaveResultado');
+  if(panel) panel.innerHTML = renderHistorialClave(clave);
 }
 function actualizarFiltroCompras(input){
   const posicion = input.selectionStart;
@@ -446,8 +457,51 @@ function renderHistorialClave(clave){
       </tr>`).join('')}</tbody></table>`}
     </div>`;
 }
+function actualizarResultadosVenta(){
+  const input = document.querySelector('[data-search="venta"]');
+  const selectProducto = document.getElementById('ventaProductoSelect');
+  const selectVariante = document.getElementById('ventaVarianteSelect');
+  if(!input || !selectProducto || !selectVariante) return;
+  const term = ventaSearch.trim().toLowerCase();
+  const productos = ventaSelCat ? state.productos.filter(p=>p.categoria===ventaSelCat) : state.productos;
+  const filtrados = term ? productos.filter(p=>
+    p.nombre.toLowerCase().includes(term) || (p.descripcion||'').toLowerCase().includes(term) ||
+    p.id.toLowerCase().includes(term) || p.variantes.some(v=>(v.codigo||'').toLowerCase().includes(term))
+  ) : productos;
+  if(term){
+    const exacta = state.productos.flatMap(p=>p.variantes.map(v=>({p,v}))).find(({v})=>(v.codigo||'').toLowerCase()===term);
+    if(exacta){ ventaSelProd=exacta.p.id; ventaSelVar=exacta.v.id; }
+  }
+  document.getElementById('ventaProductoLabel').textContent = 'Producto '+(term?'('+filtrados.length+' resultado(s))':'');
+  selectProducto.innerHTML = '<option value="">Elegí un producto</option>'+filtrados.map(p=>`<option value="${p.id}">${p.nombre}${p.descripcion?(' — '+p.descripcion):''}</option>`).join('');
+  selectProducto.value = ventaSelProd;
+  const producto = state.productos.find(p=>p.id===ventaSelProd);
+  selectVariante.disabled = !producto;
+  selectVariante.innerHTML = '<option value="">Elegí variante</option>'+(producto ? producto.variantes.map(v=>`<option value="${v.id}" ${v.stock<=0?'disabled':''}>${v.talle} ${v.color}${v.codigo?(' ['+v.codigo+']'):''} (stock ${v.stock})</option>`).join('') : '');
+  selectVariante.value = ventaSelVar;
+  const variante = producto && producto.variantes.find(v=>v.id===ventaSelVar);
+  const agregar = document.getElementById('ventaAgregarBtn');
+  if(agregar) agregar.disabled = !producto || !variante;
+  const historial = document.getElementById('ventaClaveResultado');
+  if(historial) historial.innerHTML = '';
+}
+function actualizarResultadosStock(){
+  const resultados = document.getElementById('stockSearchResults');
+  if(!resultados) return;
+  const term = stockSearch.trim().toLowerCase();
+  let filtrados = state.productos;
+  if(stockCategoryFilter) filtrados = filtrados.filter(p=>p.categoria===stockCategoryFilter);
+  if(term) filtrados = filtrados.filter(p=>p.nombre.toLowerCase().includes(term) || (p.descripcion||'').toLowerCase().includes(term) || p.id.toLowerCase().includes(term) || p.variantes.some(v=>(v.codigo||'').toLowerCase().includes(term)));
+  resultados.innerHTML = renderResultadosStock(filtrados, state.config.categorias);
+  const historial = document.getElementById('stockClaveResultado');
+  if(historial) historial.innerHTML = '';
+}
 function turnoAbierto(){ return state.turnos.find(t=>t.abierto); }
 function ventasDe(fecha){ return state.ventas.filter(v=>v.fecha===fecha); }
+function cantidadPendienteDeDevolver(venta, item){
+  const devuelta = state.devoluciones.filter(d=>d.ventaId===venta.id && d.varianteId===item.varianteId).reduce((total,d)=>total+Number(d.cantidad||0),0);
+  return Math.max(0, Number(item.cantidad||0)-devuelta);
+}
 
 /* ---------- navegación ---------- */
 let currentTab = 'vender';
@@ -567,6 +621,7 @@ function renderRecibo(ventaId){
       <div class="receipt-foot">¡Gracias por tu compra!</div>
       <div class="receipt-actions no-print">
         <button class="btn primary" onclick="guardarComprobante('${v.id}')">💾 Descargar (PDF)</button>
+        <button class="btn ghost" onclick="window.print()">Imprimir</button>
         <button class="btn ghost" onclick="cerrarComprobante()">Cerrar</button>
       </div>
     </div>
@@ -724,15 +779,15 @@ function renderVender(){
         </select>
       </div>
       <div class="field" style="flex:2 1 220px;">
-        <label>Producto ${term ? '('+prodsFiltrados.length+' resultado(s))' : ''}</label>
-        <select onchange="ventaSelProd=this.value; ventaSelVar=''; renderAll();">
+        <label id="ventaProductoLabel">Producto ${term ? '('+prodsFiltrados.length+' resultado(s))' : ''}</label>
+        <select id="ventaProductoSelect" onchange="ventaSelProd=this.value; ventaSelVar=''; renderAll();">
           <option value="">Elegí un producto</option>
           ${prodsFiltrados.map(p=>`<option value="${p.id}" ${ventaSelProd===p.id?'selected':''}>${p.nombre}${p.descripcion?(' — '+p.descripcion):''}</option>`).join('')}
         </select>
       </div>
       <div class="field">
         <label>Talle / color</label>
-        <select onchange="ventaSelVar=this.value; renderAll();" ${!prodSel?'disabled':''}>
+        <select id="ventaVarianteSelect" onchange="ventaSelVar=this.value; renderAll();" ${!prodSel?'disabled':''}>
           <option value="">Elegí variante</option>
           ${variantes.map(v=>`<option value="${v.id}" ${ventaSelVar===v.id?'selected':''} ${v.stock<=0?'disabled':''}>${v.talle} ${v.color}${v.codigo?(' ['+v.codigo+']'):''} (stock ${v.stock})</option>`).join('')}
         </select>
@@ -742,8 +797,8 @@ function renderVender(){
         <input type="number" min="1" value="${ventaSelQty}" onchange="ventaSelQty=parseInt(this.value)||1; renderAll();">
       </div>
     </div>
-    ${renderHistorialClave(ventaClaveConsultada)}
-    <button class="btn primary" ${(!prodSel||!varSel)?'disabled':''} onclick="agregarAlCarrito()">+ Agregar a la venta</button>
+    <div id="ventaClaveResultado">${renderHistorialClave(ventaClaveConsultada)}</div>
+    <button id="ventaAgregarBtn" class="btn primary" ${(!prodSel||!varSel)?'disabled':''} onclick="agregarAlCarrito()">+ Agregar a la venta</button>
   </div>
 
   <div class="card">
@@ -827,7 +882,9 @@ function confirmarVenta(){
   ultimaVentaId = nuevaVenta.id;
   cart = [];
   showToast('Venta registrada · ' + money(total));
+  printVentaId = nuevaVenta.id;
   renderAll();
+  guardarComprobante(nuevaVenta.id);
 }
 
 /* =================== STOCK =================== */
@@ -835,6 +892,8 @@ let showNuevoProducto = false;
 let nuevoProd = {nombre:'', descripcion:'', categoria:'', costo:'', precio:''};
 let addVarianteFormFor = null;
 let nuevaVariante = {talle:'', color:'', stock:'', codigo:''};
+let productoEditandoId = null;
+let productoEditDraft = null;
 let stockSearch = '', stockClaveConsultada = '';
 let stockCategoryFilter = '';
 
@@ -854,14 +913,6 @@ function renderStock(){
     );
   }
 
-  const porCategoria = {};
-  categorias.forEach(c=>porCategoria[c]=[]);
-  const sinCategoria = [];
-  productosFiltrados.forEach(p=>{
-    if(porCategoria[p.categoria]) porCategoria[p.categoria].push(p);
-    else sinCategoria.push(p);
-  });
-
   return `
   <h2 class="section-title">Stock</h2>
   <p class="section-note">Tus productos, talles/colores y cantidades disponibles.</p>
@@ -870,7 +921,7 @@ function renderStock(){
     <label>Buscar por clave o nombre</label>
     <input type="text" data-search="stock" placeholder="Ej: REM-SAK o jean..." value="${stockSearch}" aria-label="Buscar por clave o nombre" oninput="actualizarBusqueda('stock', this);" onkeydown="buscarClaveConEnter('stock', event, this);">
   </div>
-  ${renderHistorialClave(stockClaveConsultada)}
+  <div id="stockClaveResultado">${renderHistorialClave(stockClaveConsultada)}</div>
   <div class="cat-scroll">
     <span class="muted" style="font-size:11.5px;align-self:center;flex:0 0 auto;">Filtrar por categoría:</span>
     <button class="cat-scroll-chip ${stockCategoryFilter===''?'active':''}" onclick="stockCategoryFilter=''; renderAll();">Todas</button>
@@ -912,15 +963,26 @@ function renderStock(){
 
   <hr class="stitch">
 
-  ${categorias.map(cat=>{
+  <div id="stockSearchResults">${renderResultadosStock(productosFiltrados,categorias)}</div>
+  `;
+}
+
+function renderResultadosStock(productosFiltrados,categorias){
+  const porCategoria = {};
+  categorias.forEach(c=>porCategoria[c]=[]);
+  const sinCategoria = [];
+  productosFiltrados.forEach(p=>{
+    if(porCategoria[p.categoria]) porCategoria[p.categoria].push(p);
+    else sinCategoria.push(p);
+  });
+  return `${categorias.map(cat=>{
     const items = porCategoria[cat];
     if(!items.length) return '';
-    return `<div class="cat-heading">${cat}</div>` + items.map(p=>renderProductoCard(p)).join('');
+    return `<div class="cat-heading">${cat}</div>`+items.map(p=>renderProductoCard(p)).join('');
   }).join('')}
-  ${sinCategoria.length ? `<div class="cat-heading">Sin categoría</div>` + sinCategoria.map(p=>renderProductoCard(p)).join('') : ''}
-  ${(state.productos.length===0) ? '<p class="empty">Todavía no cargaste productos.</p>' : ''}
-  ${(state.productos.length>0 && productosFiltrados.length===0) ? '<p class="empty">No encontramos productos con ese filtro.</p>' : ''}
-  `;
+  ${sinCategoria.length ? `<div class="cat-heading">Sin categoría</div>`+sinCategoria.map(p=>renderProductoCard(p)).join('') : ''}
+  ${state.productos.length===0 ? '<p class="empty">Todavía no cargaste productos.</p>' : ''}
+  ${state.productos.length>0 && productosFiltrados.length===0 ? '<p class="empty">No encontramos productos con ese filtro.</p>' : ''}`;
 }
 
 function renderProductoCard(p){
@@ -929,9 +991,20 @@ function renderProductoCard(p){
   <div class="card">
     <div class="card-title">
       <span>${p.nombre} <span class="muted num" style="font-size:12px;">· costo ${money(p.costo)} · venta ${money(p.precio)}</span></span>
-      <span class="pill ${totalStock<=0?'low':totalStock<=LOW_STOCK?'mid':'ok'}">${totalStock} en stock</span>
+      <span style="display:flex;align-items:center;gap:8px;"><span class="pill ${totalStock<=0?'low':totalStock<=LOW_STOCK?'mid':'ok'}">${totalStock} en stock</span><button class="btn small ghost" onclick="iniciarEdicionProducto('${p.id}')">Editar</button></span>
     </div>
     ${p.descripcion ? `<div class="prod-desc">${p.descripcion}</div>` : ''}
+    ${productoEditandoId===p.id ? `
+      <div class="row" style="margin-top:10px;">
+        <div class="field"><label>Nombre</label><input type="text" value="${productoEditDraft.nombre}" oninput="productoEditDraft.nombre=this.value"></div>
+        <div class="field"><label>Categoría</label><select oninput="productoEditDraft.categoria=this.value">${state.config.categorias.map(c=>`<option value="${c}" ${productoEditDraft.categoria===c?'selected':''}>${c}</option>`).join('')}</select></div>
+        <div class="field"><label>Descripción</label><input type="text" value="${productoEditDraft.descripcion}" oninput="productoEditDraft.descripcion=this.value"></div>
+        <div class="field"><label>Costo</label><input type="number" min="0" value="${productoEditDraft.costo}" oninput="productoEditDraft.costo=this.value"></div>
+        <div class="field"><label>Precio</label><input type="number" min="0" value="${productoEditDraft.precio}" oninput="productoEditDraft.precio=this.value"></div>
+      </div>
+      <button class="btn small primary" onclick="guardarEdicionProducto('${p.id}')">Guardar cambios</button>
+      <button class="btn small ghost" onclick="cancelarEdicionProducto()">Cancelar</button>
+    ` : ''}
     ${p.variantes.length===0 ? '<p class="empty">Sin variantes cargadas todavía.</p>' : p.variantes.map(v=>`
       <div class="variant-row">
         <span class="vlabel">${v.talle||'-'} ${v.color?('· '+v.color):''} ${v.codigo?`<span class="pill mid" style="margin-left:4px;">${v.codigo}</span>`:''}</span>
@@ -952,7 +1025,7 @@ function renderProductoCard(p){
           <label>Código / palabra clave</label>
           <div style="display:flex;gap:4px;">
             <input type="text" value="${nuevaVariante.codigo}" oninput="nuevaVariante.codigo=this.value" placeholder="Ej: REM-SAK-1">
-            <button class="btn small ghost" title="Sugerir a partir del nombre y el talle" onclick="nuevaVariante.codigo=sugerirCodigoVariante('${p.nombre.replace(/'/g,"\\'")}', nuevaVariante.talle); renderAll();">Sugerir</button>
+            <button class="btn small ghost" title="Generar clave categoría-nombre-color-talle" onclick="nuevaVariante.codigo=sugerirCodigoVariante('${p.nombre.replace(/'/g,"\\'")}', nuevaVariante.talle, nuevaVariante.color, '${p.categoria.replace(/'/g,"\\'")}'); renderAll();">Generar clave</button>
           </div>
         </div>
         <div class="field" style="flex:0 0 auto;justify-content:flex-end;">
@@ -964,13 +1037,42 @@ function renderProductoCard(p){
   </div>`;
 }
 
-function sugerirCodigoVariante(nombre, talle, color=''){
-  const palabras = (nombre||'').trim().split(/\s+/).filter(Boolean).slice(0,2);
-  const partes = palabras.map(w=>w.replace(/[^a-zA-Z0-9]/g,'').slice(0,3).toUpperCase());
-  const talleLimpio = (talle||'').toString().trim().toUpperCase().replace(/\s+/g,'');
-  const colorLimpio = (color||'').toString().trim().replace(/[^a-zA-Z0-9]/g,'').slice(0,3).toUpperCase();
-  return [...partes, talleLimpio, colorLimpio].filter(Boolean).join('-');
+function normalizarClave(texto){
+  return (texto||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]/g,'').toUpperCase();
 }
+function sugerirCodigoVariante(nombre, talle, color='', categoria=''){
+  const categoriaLimpia = normalizarClave(categoria);
+  const categoriaCodigo = categoriaLimpia.slice(0,3);
+  const palabras = (nombre||'').trim().split(/\s+/).filter(Boolean);
+  const palabraNombre = palabras.find(p=>!categoriaCodigo || !normalizarClave(p).startsWith(categoriaCodigo)) || palabras[0] || '';
+  const nombreCodigo = normalizarClave(palabraNombre).slice(0,3);
+  const colorCodigo = normalizarClave(color).slice(0,3);
+  const talleNormalizado = normalizarClave(talle);
+  const talleCodigo = /^\d+$/.test(talleNormalizado) ? talleNormalizado.padStart(2,'0') : talleNormalizado;
+  return [categoriaCodigo || normalizarClave(palabras[0]).slice(0,3), nombreCodigo, colorCodigo, talleCodigo].filter(Boolean).join('-');
+}
+function iniciarEdicionProducto(id){
+  const producto = state.productos.find(p=>p.id===id);
+  if(!producto) return;
+  productoEditandoId = id;
+  productoEditDraft = {nombre:producto.nombre, categoria:producto.categoria, descripcion:producto.descripcion||'', costo:producto.costo, precio:producto.precio};
+  renderAll();
+}
+function guardarEdicionProducto(id){
+  const producto = state.productos.find(p=>p.id===id);
+  if(!producto || !productoEditDraft) return;
+  if(!productoEditDraft.nombre.trim()){ showToast('El nombre del producto no puede quedar vacío'); return; }
+  producto.nombre = productoEditDraft.nombre.trim();
+  producto.categoria = productoEditDraft.categoria;
+  producto.descripcion = productoEditDraft.descripcion.trim();
+  producto.costo = Number(productoEditDraft.costo)||0;
+  producto.precio = Number(productoEditDraft.precio)||0;
+  save();
+  productoEditandoId = null; productoEditDraft = null;
+  showToast('Producto actualizado');
+  renderAll();
+}
+function cancelarEdicionProducto(){ productoEditandoId = null; productoEditDraft = null; renderAll(); }
 
 function crearProducto(){
   if(!nuevoProd.nombre.trim()){ showToast('Ponele un nombre al producto'); return; }
@@ -992,7 +1094,9 @@ function eliminarProducto(id){
 function guardarVariante(prodId){
   const p = state.productos.find(p=>p.id===prodId);
   if(!p) return;
-  p.variantes.push({id:uid(), talle:nuevaVariante.talle.trim()||'Único', color:nuevaVariante.color.trim(), codigo:(nuevaVariante.codigo||'').trim().toUpperCase(), stock:Number(nuevaVariante.stock)||0});
+  const talle = nuevaVariante.talle.trim()||'Único';
+  const color = nuevaVariante.color.trim();
+  p.variantes.push({id:uid(), talle, color, codigo:(nuevaVariante.codigo||sugerirCodigoVariante(p.nombre,talle,color,p.categoria)).trim().toUpperCase(), stock:Number(nuevaVariante.stock)||0});
   save();
   addVarianteFormFor = null;
   renderAll();
@@ -1022,9 +1126,9 @@ let devManualProdId = '';
 let devManualVarId = '';
 
 function renderDevoluciones(){
-  const ventasDia = ventasDe(devFecha);
+  const ventasDia = ventasDe(devFecha).filter(v=>v.items.some(i=>cantidadPendienteDeDevolver(v,i)>0));
   const ventaSel = ventasDia.find(v=>v.id===devVentaId);
-  const itemSel = ventaSel ? ventaSel.items[devItemIdx] : null;
+  const itemSel = ventaSel && ventaSel.items[devItemIdx] && cantidadPendienteDeDevolver(ventaSel,ventaSel.items[devItemIdx])>0 ? ventaSel.items[devItemIdx] : null;
   const historial = state.devoluciones.slice().reverse();
 
   const manualProd = state.productos.find(p=>p.id===devManualProdId);
@@ -1048,13 +1152,13 @@ function renderDevoluciones(){
         <label>Producto de esa venta</label>
         <select onchange="devItemIdx=this.value; renderAll();" ${!ventaSel?'disabled':''}>
           <option value="">Elegí un producto</option>
-          ${ventaSel ? ventaSel.items.map((i,idx)=>`<option value="${idx}" ${String(devItemIdx)===String(idx)?'selected':''}>${i.cantidad}x ${i.nombre}${i.varianteLabel?(' ('+i.varianteLabel+')'):''}</option>`).join('') : ''}
+          ${ventaSel ? ventaSel.items.map((i,idx)=>({i,idx,pendiente:cantidadPendienteDeDevolver(ventaSel,i)})).filter(x=>x.pendiente>0).map(({i,idx,pendiente})=>`<option value="${idx}" ${String(devItemIdx)===String(idx)?'selected':''}>${pendiente} disponible(s) · ${i.nombre}${i.varianteLabel?(' ('+i.varianteLabel+')'):''}</option>`).join('') : ''}
         </select>
       </div>
     </div>
     ${itemSel ? renderFormDevolucion({
         origen:'venta', ventaId: ventaSel.id, productoId:itemSel.productoId, varianteId:itemSel.varianteId,
-        nombre:itemSel.nombre, varianteLabel:itemSel.varianteLabel, precioUnit:itemSel.precioUnit, maxCantidad:itemSel.cantidad
+        nombre:itemSel.nombre, varianteLabel:itemSel.varianteLabel, precioUnit:itemSel.precioUnit, maxCantidad:cantidadPendienteDeDevolver(ventaSel,itemSel)
       }) : ''}
   </div>
 
@@ -1149,7 +1253,7 @@ function confirmarDevolucion(){
   state.devoluciones.push({
     id: uid(), fecha: todayStr(), hora: timeStr(),
     ventaId: ctx.ventaId, productoId: ctx.productoId, varianteId: ctx.varianteId,
-    nombre: ctx.nombre, varianteLabel: ctx.varianteLabel,
+    itemIdx: devItemIdx, nombre: ctx.nombre, varianteLabel: ctx.varianteLabel,
     cantidad, montoDevuelto, motivo: devMotivo.trim(), reintegro: devReintegro,
     turnoId: t ? t.id : null
   });
@@ -1630,7 +1734,7 @@ function agregarCompraRapida(){
   const codigoBase = compraRapida.codigo.trim().toUpperCase();
   talles.forEach(talle=>coloresFinales.forEach(color=>{
     const tienePlantilla = codigoBase.includes('{TALLE}') || codigoBase.includes('{COLOR}');
-    const codigoGenerado = codigoBase ? (tienePlantilla ? codigoBase.replace('{TALLE}', talle.toUpperCase()).replace('{COLOR}', color.toUpperCase()) : codigoBase+'-'+talle.toUpperCase()+(color?'-'+color.toUpperCase():'')) : sugerirCodigoVariante(producto.nombre, talle, color);
+    const codigoGenerado = codigoBase ? (tienePlantilla ? codigoBase.replace('{TALLE}', talle.toUpperCase()).replace('{COLOR}', color.toUpperCase()) : codigoBase+'-'+talle.toUpperCase()+(color?'-'+color.toUpperCase():'')) : sugerirCodigoVariante(producto.nombre, talle, color, categoria);
     let variante = producto.variantes.find(v=>codigoGenerado ? v.codigo===codigoGenerado : v.talle.toLowerCase()===talle.toLowerCase() && v.color.toLowerCase()===color.toLowerCase());
     if(!variante){ variante = {id:uid(), talle, color, codigo:codigoGenerado, stock:0}; producto.variantes.push(variante); }
     const existente = compraLineas.find(l=>l.varianteId===variante.id);
