@@ -529,6 +529,25 @@
   @media (prefers-reduced-motion:reduce){
     *,*::before,*::after{scroll-behavior:auto !important;transition:none !important;}
   }
+  #labelPrintOverlay{display:none;}
+  #labelPrintOverlay.active{display:block;position:fixed;inset:0;z-index:100;background:var(--paper);color:var(--ink);overflow:auto;padding:16px;}
+  .label-print-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;max-width:1000px;margin:0 auto 16px;}
+  .label-grid{display:grid;grid-template-columns:repeat(3,62mm);gap:2mm;justify-content:center;}
+  .price-label{height:38mm;border:1px solid #25352B;border-radius:2mm;background:#FFFFFF;color:#101713;padding:3mm;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden;break-inside:avoid;}
+  .price-label-name{font:700 10pt var(--font-body);line-height:1.15;max-height:8mm;overflow:hidden;}
+  .price-label-variant{font:500 8pt var(--font-body);color:#435448;}
+  .price-label-code{font:600 8pt var(--font-mono);letter-spacing:.2px;}
+  .price-label-prices{display:grid;grid-template-columns:1fr 1fr;column-gap:3mm;row-gap:1mm;font:600 7pt var(--font-body);}
+  .price-label-prices strong{font:700 8pt var(--font-mono);}
+  @media print{
+    @page{size:A4;margin:8mm;}
+    body.labels-printing{background:#FFFFFF !important;color:#101713 !important;}
+    body.labels-printing #app,body.labels-printing #receiptOverlay,body.labels-printing .toast{display:none !important;}
+    body.labels-printing #labelPrintOverlay{display:block !important;position:static;overflow:visible;padding:0;background:#FFFFFF;color:#101713;}
+    body.labels-printing .label-print-toolbar{display:none !important;}
+    body.labels-printing .label-grid{grid-template-columns:repeat(3,62mm);gap:2mm;justify-content:start;}
+    body.labels-printing .price-label{print-color-adjust:exact;-webkit-print-color-adjust:exact;}
+  }
 </style>
 </head>
 <body>
@@ -553,6 +572,7 @@
   <main id="content"></main>
 </div>
 <div id="receiptOverlay" style="display:none;"></div>
+<div id="labelPrintOverlay"></div>
 <div class="toast" id="toast"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -614,7 +634,8 @@ function defaultState(){
     ventas: [],
     turnos: [],
     compras: [],
-    devoluciones: []
+    devoluciones: [],
+    etiquetasPendientes: {}
   };
 }
 let state;
@@ -628,6 +649,7 @@ try{
   if(!state.config.categorias) state.config.categorias = DEFAULT_CATEGORIAS.slice();
   if(!state.config.pins) state.config.pins = { admin:"1234", empleado:"0000" };
   if(!state.devoluciones) state.devoluciones = [];
+  if(!state.etiquetasPendientes || typeof state.etiquetasPendientes!=='object') state.etiquetasPendientes = {};
 }catch(e){ state = defaultState(); }
 
 function save(){
@@ -852,6 +874,24 @@ function cantidadPendienteDeDevolver(venta, item){
 }
 function esCambioDevolucion(devolucion){
   return devolucion.tipo==='cambio' || devolucion.reintegro==='Sin reintegro';
+}
+function productosRecibidosCambio(devolucion){
+  if(Array.isArray(devolucion.productosNuevos) && devolucion.productosNuevos.length) return devolucion.productosNuevos;
+  if(!devolucion.nombreNuevo) return [];
+  return [{
+    productoId:devolucion.productoNuevoId||null,
+    varianteId:devolucion.varianteNuevaId||null,
+    nombre:devolucion.nombreNuevo,
+    varianteLabel:devolucion.varianteNuevaLabel||'',
+    codigo:devolucion.codigoNuevo||'',
+    cantidad:Number(devolucion.cantidad||1),
+    precioUnit:Number(devolucion.montoNuevo||0)/Math.max(1,Number(devolucion.cantidad||1))
+  }];
+}
+function descripcionProductosRecibidos(devolucion){
+  return productosRecibidosCambio(devolucion).map(linea=>
+    `${linea.nombre}${linea.varianteLabel?' ('+linea.varianteLabel+')':''} ×${linea.cantidad}`
+  ).join(', ') || 'Cambio sin reintegro';
 }
 function ajusteEconomicoDevolucion(devolucion){
   return esCambioDevolucion(devolucion) ? Number(devolucion.montoDiferencia||0) : -Number(devolucion.montoDevuelto||0);
@@ -1239,6 +1279,7 @@ function confirmarVenta(){
   for(const item of cart){
     const p = state.productos.find(p=>p.id===item.productoId);
     const v = p.variantes.find(v=>v.id===item.varianteId);
+    retirarEtiquetasPendientes(v.id,item.cantidad);
     v.stock = Math.max(0, v.stock - item.cantidad);
   }
 
@@ -1286,6 +1327,10 @@ function renderStock(){
   return `
   <h2 class="section-title">Stock</h2>
   <p class="section-note">Tus productos, talles/colores y cantidades disponibles.</p>
+  <div class="row" style="margin-bottom:12px;">
+    <button class="btn" onclick="imprimirEtiquetasStock('todas')">Imprimir todas (${contarEtiquetasStock()})</button>
+    <button class="btn primary" onclick="imprimirEtiquetasStock('nuevas')" ${contarEtiquetasPendientes()===0?'disabled':''}>Imprimir nuevas (${contarEtiquetasPendientes()})</button>
+  </div>
 
   <div class="field" style="max-width:340px;">
     <label>Buscar por clave o nombre</label>
@@ -1360,6 +1405,84 @@ function renderResultadosStock(productosFiltrados,categorias){
   ${sinCategoria.length ? `<div class="cat-heading">Sin categoría</div><div style="max-height:360px;overflow-y:auto;">${itemsLimitados(sinCategoria).map(p=>renderProductoCard(p)).join('')}</div>` : ''}
   ${state.productos.length===0 ? '<p class="empty">Todavía no cargaste productos.</p>' : ''}
   ${state.productos.length>0 && productosFiltrados.length===0 ? '<p class="empty">No encontramos productos con ese filtro.</p>' : ''}`;
+}
+
+function escaparHTML(valor){
+  return String(valor??'').replace(/[&<>"']/g,caracter=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[caracter]));
+}
+function contarEtiquetasStock(){
+  return state.productos.reduce((total,producto)=>total+producto.variantes.reduce((subtotal,variante)=>subtotal+Math.max(0,Number(variante.stock)||0),0),0);
+}
+function contarEtiquetasPendientes(){
+  return Object.values(state.etiquetasPendientes||{}).reduce((total,cantidad)=>total+Math.max(0,Number(cantidad)||0),0);
+}
+function registrarEtiquetasPendientes(varianteId,cantidad){
+  const incremento=Math.max(0,Number(cantidad)||0);
+  if(!varianteId||!incremento)return;
+  state.etiquetasPendientes=state.etiquetasPendientes||{};
+  state.etiquetasPendientes[varianteId]=(Number(state.etiquetasPendientes[varianteId])||0)+incremento;
+}
+function retirarEtiquetasPendientes(varianteId,cantidad){
+  const pendientes=state.etiquetasPendientes||{};
+  const retiro=Math.min(Math.max(0,Number(pendientes[varianteId])||0),Math.max(0,Number(cantidad)||0));
+  const restantes=(Number(pendientes[varianteId])||0)-retiro;
+  if(restantes>0)pendientes[varianteId]=restantes;
+  else delete pendientes[varianteId];
+  return retiro;
+}
+function cerrarEtiquetasStock(){
+  document.body.classList.remove('labels-printing');
+  const overlay=document.getElementById('labelPrintOverlay');
+  overlay.classList.remove('active');
+  overlay.innerHTML='';
+  window.etiquetasImpresion=null;
+  renderAll();
+}
+function imprimirEtiquetasStock(modo='todas'){
+  const etiquetas=state.productos.flatMap(producto=>producto.variantes.flatMap(variante=>{
+    const stock=Math.max(0,Number(variante.stock)||0);
+    const cantidadPendiente=Math.max(0,Number(state.etiquetasPendientes?.[variante.id])||0);
+    const cantidad=modo==='nuevas'?Math.min(stock,cantidadPendiente):stock;
+    return Array.from({length:cantidad},()=>({producto,variante}));
+  }));
+  if(!etiquetas.length){showToast('No hay prendas con stock para imprimir');return;}
+  const pctDebito=Number(state.config.debitoPct)||0;
+  const pctCredito=Number(state.config.creditoPct)||0;
+  const overlay=document.getElementById('labelPrintOverlay');
+  const conteoImpreso=etiquetas.reduce((conteo,{variante})=>{conteo[variante.id]=(conteo[variante.id]||0)+1;return conteo;},{});
+  window.etiquetasImpresion={modo,conteo:conteoImpreso};
+  overlay.innerHTML=`<div class="label-print-toolbar"><b>${etiquetas.length} etiqueta(s) ${modo==='nuevas'?'nuevas pendientes':'de todo el stock'}</b><div class="row"><button class="btn" onclick="imprimirEtiquetasVista()">Imprimir / Guardar PDF</button><button class="btn ghost" onclick="cerrarEtiquetasStock()">Cerrar</button></div></div>
+    <div class="label-grid">${etiquetas.map(({producto,variante})=>{
+      const precio=Number(producto.precio)||0;
+      const precioDebito=precio+Math.round(precio*pctDebito/100);
+      const precioCredito=precio+Math.round(precio*pctCredito/100);
+      const varianteTexto=[variante.talle,variante.color].filter(Boolean).join(' / ')||'Único';
+      return `<article class="price-label">
+        <div class="price-label-name">${escaparHTML(producto.nombre)}</div>
+        <div class="price-label-variant">${escaparHTML(varianteTexto)}</div>
+        <div class="price-label-code">${escaparHTML(variante.codigo||'SIN CLAVE')}</div>
+        <div class="price-label-prices">
+          <span>Efectivo / transferencia<br><strong>${money(precio)}</strong></span>
+          <span>Débito<br><strong>${money(precioDebito)}</strong></span>
+          <span>Crédito<br><strong>${money(precioCredito)}</strong></span>
+        </div>
+      </article>`;
+    }).join('')}</div>`;
+  overlay.classList.add('active');
+  document.body.classList.add('labels-printing');
+}
+  function imprimirEtiquetasVista(){
+    if(!window.etiquetasImpresion)return;
+    window.addEventListener('afterprint',registrarEtiquetasImpresas,{once:true});
+    window.print();
+  }
+  function registrarEtiquetasImpresas(){
+  if(!window.etiquetasImpresion)return;
+  if(window.etiquetasImpresion.modo==='todas') state.etiquetasPendientes={};
+  else Object.entries(window.etiquetasImpresion.conteo).forEach(([varianteId,cantidad])=>retirarEtiquetasPendientes(varianteId,cantidad));
+  save();
+    window.etiquetasImpresion.impresas=true;
+    showToast('Etiquetas impresas y registradas');
 }
 
 function valorOrdenTalle(talle){
@@ -1507,6 +1630,7 @@ function guardarCargaRapidaStock(){
     let variante = producto.variantes.find(v=>v.codigo===codigo || (!codigo && v.talle.toLowerCase()===talle.toLowerCase() && v.color.toLowerCase()===color.toLowerCase()));
     if(!variante){ variante={id:uid(),talle,color,codigo,stock:0}; producto.variantes.push(variante); }
     variante.stock += cantidad;
+    registrarEtiquetasPendientes(variante.id,cantidad);
     agregadas++;
   }));
   save();
@@ -1518,6 +1642,8 @@ function guardarCargaRapidaStock(){
 }
 function eliminarProducto(id){
   if(!confirm('¿Eliminar este producto y todas sus variantes?')) return;
+  const producto=state.productos.find(p=>p.id===id);
+  producto?.variantes.forEach(variante=>delete state.etiquetasPendientes[variante.id]);
   state.productos = state.productos.filter(p=>p.id!==id);
   save(); renderAll();
 }
@@ -1526,7 +1652,9 @@ function guardarVariante(prodId){
   if(!p) return;
   const talle = nuevaVariante.talle.trim()||'Único';
   const color = nuevaVariante.color.trim();
-  p.variantes.push({id:uid(), talle, color, codigo:(nuevaVariante.codigo||sugerirCodigoVariante(p.nombre,talle,color,p.categoria)).trim().toUpperCase(), stock:Number(nuevaVariante.stock)||0});
+  const variante={id:uid(), talle, color, codigo:(nuevaVariante.codigo||sugerirCodigoVariante(p.nombre,talle,color,p.categoria)).trim().toUpperCase(), stock:Number(nuevaVariante.stock)||0};
+  p.variantes.push(variante);
+  registrarEtiquetasPendientes(variante.id,variante.stock);
   save();
   addVarianteFormFor = null;
   renderAll();
@@ -1534,12 +1662,15 @@ function guardarVariante(prodId){
 function eliminarVariante(prodId,varId){
   const p = state.productos.find(p=>p.id===prodId);
   if(!p) return;
+  delete state.etiquetasPendientes[varId];
   p.variantes = p.variantes.filter(v=>v.id!==varId);
   save(); renderAll();
 }
 function ajustarStock(prodId,varId,delta){
   const p = state.productos.find(p=>p.id===prodId);
   const v = p.variantes.find(v=>v.id===varId);
+  if(delta>0) registrarEtiquetasPendientes(v.id,delta);
+  else retirarEtiquetasPendientes(v.id,Math.abs(delta));
   v.stock = Math.max(0, v.stock+delta);
   save(); renderAll();
 }
@@ -1552,8 +1683,10 @@ let devCantidad = 1;
 let devMotivo = '';
 let devReintegro = 'Efectivo';
 let devTipo = 'devolucion';
-let devProductoNuevoId = '';
-let devVarianteNuevaId = '';
+let devCambioProdId = '';
+let devCambioVarId = '';
+let devCambioCantidad = 1;
+let devCambioLineas = [];
 let devMetodoDiferencia = 'Efectivo';
 // modo manual (cuando la venta no está en el sistema)
 let devManualProdId = '';
@@ -1764,7 +1897,7 @@ function renderDevoluciones(){
         <td>${fmtDate(d.fecha)} ${d.hora}</td>
         <td>${esCambio?'Cambio':'Devolución'}</td>
         <td>${d.nombre}${d.varianteLabel?(' ('+d.varianteLabel+')'):''}${d.motivo?'<br><span class="muted">'+d.motivo+'</span>':''}</td>
-        <td>${esCambio ? (d.nombreNuevo ? d.nombreNuevo+(d.varianteNuevaLabel?' ('+d.varianteNuevaLabel+')':'') : 'Cambio sin reintegro') : 'Reintegro '+d.reintegro}</td>
+        <td>${esCambio ? descripcionProductosRecibidos(d) : 'Reintegro '+d.reintegro}</td>
         <td class="num">${d.cantidad}</td>
         <td class="num" style="color:${color};">${texto}</td>
         <td><button class="link-btn" onclick="eliminarDevolucion('${d.id}')">eliminar</button></td>
@@ -1776,17 +1909,16 @@ function renderDevoluciones(){
 
 function renderFormDevolucion(ctx){
   window._devCtx = ctx; // guardamos el contexto actual para confirmarDevolucion()
-  const productoNuevo = state.productos.find(p=>p.id===devProductoNuevoId);
-  const varianteNueva = productoNuevo && productoNuevo.variantes.find(v=>v.id===devVarianteNuevaId);
+  const productoNuevo = state.productos.find(p=>p.id===devCambioProdId);
+  const varianteNueva = productoNuevo && productoNuevo.variantes.find(v=>v.id===devCambioVarId);
   const precioViejo = ctx.precioUnit*devCantidad;
-  const precioNuevo = varianteNueva ? productoNuevo.precio*devCantidad : 0;
+  const precioNuevo = devCambioLineas.reduce((total,linea)=>total+Number(linea.precioUnit||0)*Number(linea.cantidad||0),0);
   const diferencia = precioNuevo-precioViejo;
-  const esCambioDeTalle = productoNuevo && productoNuevo.id===ctx.productoId;
   return `
   <hr class="stitch">
   <div class="field" style="max-width:260px;">
     <label>Qué necesita el cliente</label>
-    <select onchange="devTipo=this.value; devProductoNuevoId=''; devVarianteNuevaId=''; renderAll();">
+    <select onchange="devTipo=this.value; devCambioProdId=''; devCambioVarId=''; devCambioCantidad=1; devCambioLineas=[]; renderAll();">
       <option value="devolucion" ${devTipo==='devolucion'?'selected':''}>Devolución con reintegro</option>
       <option value="cambio" ${devTipo==='cambio'?'selected':''}>Cambio por otro producto o talle</option>
     </select>
@@ -1811,25 +1943,55 @@ function renderFormDevolucion(ctx){
   <div class="row">
     <div class="field" style="flex:2 1 220px;">
       <label>Producto que se lleva</label>
-      <select onchange="devProductoNuevoId=this.value; devVarianteNuevaId=''; renderAll();">
-        <option value="">Elegí otro producto o talle</option>
-        ${state.productos.map(p=>`<option value="${p.id}" ${devProductoNuevoId===p.id?'selected':''}>${p.nombre}</option>`).join('')}
+      <select onchange="devCambioProdId=this.value; devCambioVarId=''; renderAll();">
+        <option value="">Elegí un producto</option>
+        ${state.productos.map(p=>`<option value="${p.id}" ${devCambioProdId===p.id?'selected':''}>${p.nombre} · ${money(p.precio)}</option>`).join('')}
       </select>
     </div>
     <div class="field" style="flex:2 1 220px;">
       <label>Variante nueva</label>
-      <select onchange="devVarianteNuevaId=this.value; renderAll();" ${!productoNuevo?'disabled':''}>
+      <select onchange="devCambioVarId=this.value; renderAll();" ${!productoNuevo?'disabled':''}>
         <option value="">Elegí talle y color</option>
-        ${productoNuevo ? productoNuevo.variantes.filter(v=>v.stock>0).map(v=>`<option value="${v.id}" ${devVarianteNuevaId===v.id?'selected':''}>${v.talle} ${v.color}${v.codigo?(' ['+v.codigo+']'):''} · stock ${v.stock}</option>`).join('') : ''}
+        ${productoNuevo ? productoNuevo.variantes.filter(v=>v.stock>0).map(v=>`<option value="${v.id}" ${devCambioVarId===v.id?'selected':''}>${v.talle} ${v.color}${v.codigo?(' ['+v.codigo+']'):''} · stock ${v.stock}</option>`).join('') : ''}
       </select>
     </div>
+    <div class="field" style="max-width:110px;">
+      <label>Cantidad</label>
+      <input type="number" min="1" max="${varianteNueva?.stock||1}" value="${devCambioCantidad}" oninput="devCambioCantidad=Math.max(1,parseInt(this.value)||1)">
+    </div>
+    <div class="field" style="flex:0 0 auto;justify-content:flex-end;">
+      <button class="btn small" onclick="agregarPrendaCambio()" ${!varianteNueva?'disabled':''}>Agregar prenda</button>
+    </div>
   </div>
-  ${varianteNueva ? `<p class="section-note"><b>${esCambioDeTalle?'Cambio de talle':'Cambio de producto'}</b><br>Valor devuelto: ${money(precioViejo)} · Valor de lo que se lleva: ${money(precioNuevo)}<br><b>Diferencia: ${money(Math.abs(diferencia))}</b> · ${diferencia>0?'El cliente debe pagarte esa diferencia.':diferencia<0?'Debés devolverle esa diferencia al cliente.':'No se cobra ni se devuelve dinero.'}</p>
+  ${devCambioLineas.length ? `<div class="card" style="margin-top:0;">
+    <div class="card-title">Prendas agregadas al cambio</div>
+    <table><thead><tr><th>Producto</th><th>Variante</th><th>Cant.</th><th>Subtotal</th><th></th></tr></thead>
+      <tbody>${devCambioLineas.map((linea,index)=>`<tr><td>${linea.nombre}</td><td>${linea.varianteLabel}</td><td class="num">${linea.cantidad}</td><td class="num">${money(linea.precioUnit*linea.cantidad)}</td><td><button class="link-btn" onclick="quitarPrendaCambio(${index})">quitar</button></td></tr>`).join('')}</tbody>
+    </table>
+  </div>` : '<p class="section-note">Agregá una o más prendas. Se comparará el valor total con la prenda devuelta.</p>'}
+  ${devCambioLineas.length ? `<p class="section-note"><b>Valor de la prenda devuelta:</b> ${money(precioViejo)} · <b>Valor total del cambio:</b> ${money(precioNuevo)}<br><b>${diferencia>0?'El cliente te paga':diferencia<0?'Le devolvés al cliente':'Sin diferencia'}: ${money(Math.abs(diferencia))}</b></p>
     ${diferencia!==0 ? `<div class="field" style="max-width:250px;"><label>${diferencia>0?'Medio de cobro de la diferencia':'Medio de reintegro de la diferencia'}</label><select onchange="devMetodoDiferencia=this.value">${['Efectivo','Mercado Pago','Débito','Crédito'].map(m=>`<option ${devMetodoDiferencia===m?'selected':''}>${m}</option>`).join('')}</select></div>` : ''}` : ''}
   ` : `<p class="section-note">Se devuelve ${money(precioViejo)} por ${devCantidad} unidad(es) y se repone esa cantidad al stock.</p>`}
   <button class="btn primary" onclick="confirmarDevolucion()">Registrar devolución</button>
   `;
 }
+
+function agregarPrendaCambio(){
+  const producto=state.productos.find(p=>p.id===devCambioProdId);
+  const variante=producto&&producto.variantes.find(v=>v.id===devCambioVarId);
+  if(!producto||!variante){showToast('Elegí el producto y la variante');return;}
+  const cantidad=Math.max(1,parseInt(devCambioCantidad)||1);
+  const yaAgregada=devCambioLineas.filter(linea=>linea.varianteId===variante.id).reduce((total,linea)=>total+linea.cantidad,0);
+  if(yaAgregada+cantidad>variante.stock){showToast('No hay stock suficiente para esa cantidad');return;}
+  devCambioLineas.push({
+    productoId:producto.id,varianteId:variante.id,nombre:producto.nombre,
+    varianteLabel:[variante.talle,variante.color].filter(Boolean).join(' / ')||'Único',
+    codigo:variante.codigo||'',cantidad,precioUnit:Number(producto.precio||0)
+  });
+  devCambioProdId='';devCambioVarId='';devCambioCantidad=1;
+  renderAll();
+}
+function quitarPrendaCambio(index){devCambioLineas.splice(index,1);renderAll();}
 
 function confirmarDevolucion(){
   const ctx = window._devCtx;
@@ -1839,22 +2001,37 @@ function confirmarDevolucion(){
   if(!v){ showToast('No se encontró esa variante en el stock actual'); return; }
   const cantidad = Math.max(1, Math.min(devCantidad, ctx.maxCantidad));
   const montoDevuelto = ctx.precioUnit * cantidad;
-  let productoNuevo = null;
-  let varianteNueva = null;
+  let lineasNuevas = [];
   let montoNuevo = 0;
   let diferencia = -montoDevuelto;
   if(devTipo==='cambio'){
-    productoNuevo = state.productos.find(p=>p.id===devProductoNuevoId);
-    varianteNueva = productoNuevo && productoNuevo.variantes.find(v=>v.id===devVarianteNuevaId);
-    if(!varianteNueva){ showToast('Elegí el producto y la variante que se lleva'); return; }
-    if(varianteNueva.stock<cantidad){ showToast('No hay stock suficiente para completar el cambio'); return; }
-    montoNuevo = Number(productoNuevo.precio||0)*cantidad;
+    if(!devCambioLineas.length){showToast('Agregá al menos una prenda para el cambio');return;}
+    lineasNuevas=devCambioLineas.map(linea=>({...linea}));
+    const cantidadesPorVariante=new Map();
+    lineasNuevas.forEach(linea=>{
+      const clave=linea.productoId+'|'+linea.varianteId;
+      cantidadesPorVariante.set(clave,(cantidadesPorVariante.get(clave)||0)+linea.cantidad);
+    });
+    for(const [clave,cantidadSolicitada] of cantidadesPorVariante){
+      const [productoId,varianteId]=clave.split('|');
+      const producto=state.productos.find(p=>p.id===productoId);
+      const variante=producto&&producto.variantes.find(v=>v.id===varianteId);
+      if(!variante||variante.stock<cantidadSolicitada){showToast('No hay stock suficiente para completar el cambio');return;}
+    }
+    montoNuevo=lineasNuevas.reduce((total,linea)=>total+Number(linea.precioUnit||0)*linea.cantidad,0);
     diferencia = montoNuevo-montoDevuelto;
-    varianteNueva.stock -= cantidad;
+    lineasNuevas.forEach(linea=>{
+      const producto=state.productos.find(p=>p.id===linea.productoId);
+      const variante=producto.variantes.find(v=>v.id===linea.varianteId);
+      linea.etiquetasPendientesRestadas=retirarEtiquetasPendientes(variante.id,linea.cantidad);
+      variante.stock-=linea.cantidad;
+    });
   }
   v.stock += cantidad;
 
   const t = turnoAbierto();
+  const primeraLinea=lineasNuevas[0];
+  const productoNuevo=primeraLinea&&state.productos.find(p=>p.id===primeraLinea.productoId);
   const reintegro = devTipo==='devolucion' ? devReintegro : (diferencia<0 ? devMetodoDiferencia : 'Sin reintegro');
   const metodoDiferencia = diferencia>0 ? devMetodoDiferencia : '';
   if(t && ((devTipo==='devolucion' && devReintegro==='Efectivo') || (devTipo==='cambio' && diferencia<0 && devMetodoDiferencia==='Efectivo'))){
@@ -1873,16 +2050,17 @@ function confirmarDevolucion(){
     ventaFecha: ctx.ventaId ? (state.ventas.find(venta=>venta.id===ctx.ventaId)?.fecha||'') : '',
     itemIdx: ctx.ventaId ? Number(devItemIdx) : null, nombre: ctx.nombre, varianteLabel: ctx.varianteLabel, codigo:ctx.codigo||'',
     cantidad, montoDevuelto, tipo:devTipo, montoNuevo,
-    productoNuevoId:productoNuevo?.id||null, varianteNuevaId:varianteNueva?.id||null,
-    nombreNuevo:productoNuevo?.nombre||'', varianteNuevaLabel:varianteNueva?[varianteNueva.talle,varianteNueva.color].filter(Boolean).join(' / '):'',
-    codigoNuevo:varianteNueva?.codigo||'', montoDiferencia:diferencia,
+    productosNuevos:lineasNuevas,
+    productoNuevoId:primeraLinea?.productoId||null, varianteNuevaId:primeraLinea?.varianteId||null,
+    nombreNuevo:productoNuevo?.nombre||'', varianteNuevaLabel:primeraLinea?.varianteLabel||'',
+    codigoNuevo:primeraLinea?.codigo||'', montoDiferencia:diferencia,
     motivo: devMotivo.trim(), reintegro, metodoDiferencia,
     turnoId: t ? t.id : null
   });
   save();
   showToast(devTipo==='cambio' ? 'Cambio registrado' : 'Devolución y reintegro registrados');
   devVentaId=''; devItemIdx=''; devCantidad=1; devMotivo=''; devReintegro='Efectivo';
-  devTipo='devolucion'; devProductoNuevoId=''; devVarianteNuevaId=''; devMetodoDiferencia='Efectivo';
+  devTipo='devolucion'; devCambioProdId=''; devCambioVarId=''; devCambioCantidad=1; devCambioLineas=[]; devMetodoDiferencia='Efectivo';
   devManualProdId=''; devManualVarId='';
   renderAll();
 }
@@ -1891,10 +2069,24 @@ function eliminarDevolucion(id){
   const d = state.devoluciones.find(d=>d.id===id);
   if(!d) return;
   if(!confirm('¿Eliminar esta devolución del historial?')) return;
-  if(confirm('¿También revertir el stock que había sumado esta devolución (restar '+d.cantidad+' unidad/es)?')){
+  const esCambio=esCambioDevolucion(d);
+  const preguntaStock=esCambio
+    ? '¿También revertir el stock del cambio? Se restará la prenda devuelta y se repondrán las prendas entregadas.'
+    : '¿También revertir el stock que había sumado esta devolución (restar '+d.cantidad+' unidad/es)?';
+  if(confirm(preguntaStock)){
     const p = state.productos.find(p=>p.id===d.productoId);
     const v = p ? p.variantes.find(v=>v.id===d.varianteId) : null;
     if(v) v.stock = Math.max(0, v.stock - d.cantidad);
+    if(esCambio){
+      productosRecibidosCambio(d).forEach(linea=>{
+        const producto=state.productos.find(p=>p.id===linea.productoId);
+        const variante=producto&&producto.variantes.find(v=>v.id===linea.varianteId);
+        if(variante){
+          variante.stock+=Number(linea.cantidad||0);
+          registrarEtiquetasPendientes(variante.id,linea.etiquetasPendientesRestadas||0);
+        }
+      });
+    }
   }
   state.devoluciones = state.devoluciones.filter(x=>x.id!==id);
   save();
@@ -2143,7 +2335,7 @@ function renderHistorial(){
           <td>${d.hora}</td>
           <td>${esCambioDevolucion(d)?'Cambio':'Devolución'}</td>
           <td>${d.nombre}${d.varianteLabel?(' ('+d.varianteLabel+')'):''}${d.motivo?'<br><span class="muted">'+d.motivo+'</span>':''}</td>
-          <td>${esCambioDevolucion(d) ? (d.nombreNuevo ? d.nombreNuevo+(d.varianteNuevaLabel?' ('+d.varianteNuevaLabel+')':'') : 'Cambio sin reintegro')+' · '+(d.montoDiferencia>0?'cobra '+money(d.montoDiferencia):d.montoDiferencia<0?'devuelve '+money(Math.abs(d.montoDiferencia)):'sin diferencia') : 'Reintegro '+d.reintegro}</td>
+          <td>${esCambioDevolucion(d) ? descripcionProductosRecibidos(d)+' · '+(d.montoDiferencia>0?'cobra '+money(d.montoDiferencia):d.montoDiferencia<0?'devuelve '+money(Math.abs(d.montoDiferencia)):'sin diferencia') : 'Reintegro '+d.reintegro}</td>
           <td class="num">${d.cantidad}</td>
           <td class="num" style="color:${color};">${textoImporte}</td>
         </tr>`;
@@ -2218,6 +2410,7 @@ async function exportarVentasDia(){
     Tipo:d.tipo==='cambio'?'Cambio':'Devolución', ProductoDevuelto:d.nombre,
     VarianteDevuelta:d.varianteLabel||'', CodigoDevuelto:d.codigo||'', Cantidad:d.cantidad,
     ProductoRecibido:d.nombreNuevo||'', VarianteRecibida:d.varianteNuevaLabel||'', CodigoRecibido:d.codigoNuevo||'',
+    ProductosRecibidos:descripcionProductosRecibidos(d),
     ImporteDevuelto:esCambioDevolucion(d)?0:-Number(d.montoDevuelto||0), ImporteProductoRecibido:Number(d.montoNuevo||0),
     Diferencia:ajusteEconomicoDevolucion(d),
     MetodoReintegro:d.reintegro||'', MetodoDiferencia:d.metodoDiferencia||'', Motivo:d.motivo||''
@@ -2399,7 +2592,7 @@ function registrarCompra(){
   compraLineas.forEach(l=>{
     const p = state.productos.find(p=>p.id===l.productoId);
     const v = p ? p.variantes.find(v=>v.id===l.varianteId) : null;
-    if(v) v.stock += l.cantidad;
+    if(v){v.stock += l.cantidad;registrarEtiquetasPendientes(v.id,l.cantidad);}
   });
   save();
   showToast(compraLineas.length ? 'Compra registrada y stock actualizado' : 'Compra registrada');
@@ -2416,7 +2609,7 @@ function eliminarCompra(id){
     lineas.forEach(l=>{
       const p = state.productos.find(p=>p.id===l.productoId);
       const v = p ? p.variantes.find(v=>v.id===l.varianteId) : null;
-      if(v) v.stock = Math.max(0, v.stock - l.cantidad);
+      if(v){retirarEtiquetasPendientes(v.id,l.cantidad);v.stock = Math.max(0, v.stock - l.cantidad);}
     });
   }
   state.compras = state.compras.filter(x=>x.id!==id);
@@ -2593,8 +2786,16 @@ function importarStockExcel(event){
         }
         if(!state.config.categorias.some(c=>c.toLowerCase()===categoria.toLowerCase())) state.config.categorias.push(categoria);
         let variante = producto.variantes.find(v=>codigo ? v.codigo===codigo : v.talle.toLowerCase()===talle.toLowerCase() && v.color.toLowerCase()===color.toLowerCase());
-        if(!variante){ variante = {id:uid(), talle, color, codigo, stock}; producto.variantes.push(variante); }
-        else variante.stock = stock;
+        if(!variante){
+          variante = {id:uid(), talle, color, codigo, stock};
+          producto.variantes.push(variante);
+          registrarEtiquetasPendientes(variante.id,stock);
+        }else{
+          const diferenciaStock=stock-Number(variante.stock||0);
+          if(diferenciaStock>0) registrarEtiquetasPendientes(variante.id,diferenciaStock);
+          else if(diferenciaStock<0) retirarEtiquetasPendientes(variante.id,Math.abs(diferenciaStock));
+          variante.stock = stock;
+        }
         actualizadas++;
       });
       if(!actualizadas) throw new Error('sin productos válidos');
@@ -2616,6 +2817,7 @@ function importarDatos(event){
       if(!data.config.categorias) data.config.categorias = DEFAULT_CATEGORIAS.slice();
       if(!data.config.pins) data.config.pins = { admin:"1234", empleado:"0000" };
       if(!data.devoluciones) data.devoluciones = [];
+      if(!data.etiquetasPendientes || typeof data.etiquetasPendientes!=='object') data.etiquetasPendientes = {};
       state = data;
       save();
       showToast('Datos importados');
