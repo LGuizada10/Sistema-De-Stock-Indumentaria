@@ -644,7 +644,8 @@ function defaultState(){
     turnos: [],
     compras: [],
     devoluciones: [],
-    etiquetasPendientes: {}
+    etiquetasPendientes: {},
+    etiquetasInicialesImpresas: false
   };
 }
 let state;
@@ -658,6 +659,11 @@ try{
   if(!state.config.categorias) state.config.categorias = DEFAULT_CATEGORIAS.slice();
   if(!state.config.pins) state.config.pins = { admin:"1234", empleado:"0000" };
   if(!state.devoluciones) state.devoluciones = [];
+  if(typeof state.etiquetasInicialesImpresas!=='boolean'){
+    state.etiquetasInicialesImpresas=!!state.etiquetasPendientes
+      && Object.keys(state.etiquetasPendientes).length===0
+      && state.productos.some(producto=>producto.variantes.some(variante=>Number(variante.stock)>0));
+  }
   if(!state.etiquetasPendientes || typeof state.etiquetasPendientes!=='object') state.etiquetasPendientes = {};
 }catch(e){ state = defaultState(); }
 
@@ -1337,7 +1343,7 @@ function renderStock(){
   <h2 class="section-title">Stock</h2>
   <p class="section-note">Tus productos, talles/colores y cantidades disponibles.</p>
   <div class="row" style="margin-bottom:12px;">
-    <button class="btn" onclick="imprimirEtiquetasStock('todas')">Imprimir todas (${contarEtiquetasStock()})</button>
+    ${state.etiquetasInicialesImpresas ? '' : `<button class="btn" onclick="imprimirEtiquetasStock('todas')">Imprimir todas (${contarEtiquetasStock()})</button>`}
     <button class="btn primary" onclick="imprimirEtiquetasStock('nuevas')" ${contarEtiquetasPendientes()===0?'disabled':''}>Imprimir nuevas (${contarEtiquetasPendientes()})</button>
   </div>
 
@@ -1460,7 +1466,7 @@ function imprimirEtiquetasStock(modo='todas'){
   const overlay=document.getElementById('labelPrintOverlay');
   const conteoImpreso=etiquetas.reduce((conteo,{variante})=>{conteo[variante.id]=(conteo[variante.id]||0)+1;return conteo;},{});
   window.etiquetasImpresion={modo,conteo:conteoImpreso};
-  overlay.innerHTML=`<div class="label-print-toolbar"><b>${etiquetas.length} etiqueta(s) ${modo==='nuevas'?'nuevas pendientes':'de todo el stock'}</b><div class="row"><button class="btn" onclick="imprimirEtiquetasVista()">Imprimir / Guardar PDF</button><button class="btn ghost" onclick="cerrarEtiquetasStock()">Cerrar</button></div></div>
+  overlay.innerHTML=`<div class="label-print-toolbar"><b>${etiquetas.length} etiqueta(s) ${modo==='nuevas'?'nuevas pendientes':'de todo el stock'}</b><div class="row"><button class="btn" onclick="imprimirEtiquetasVista()">Imprimir / Guardar PDF</button><button class="btn primary" data-mark-labels onclick="marcarEtiquetasImpresas()">Marcar impresas</button><button class="btn ghost" onclick="cerrarEtiquetasStock()">Cerrar</button></div></div>
     <div class="label-grid">${etiquetas.map(({producto,variante})=>{
       const precio=Number(producto.precio)||0;
       const precioDebito=precio+Math.round(precio*pctDebito/100);
@@ -1480,18 +1486,27 @@ function imprimirEtiquetasStock(modo='todas'){
   overlay.classList.add('active');
   document.body.classList.add('labels-printing');
 }
-  function imprimirEtiquetasVista(){
-    if(!window.etiquetasImpresion)return;
-    window.addEventListener('afterprint',registrarEtiquetasImpresas,{once:true});
-    window.print();
-  }
-  function registrarEtiquetasImpresas(){
+function imprimirEtiquetasVista(){
   if(!window.etiquetasImpresion)return;
-  if(window.etiquetasImpresion.modo==='todas') state.etiquetasPendientes={};
+  window.addEventListener('afterprint',registrarEtiquetasImpresas,{once:true});
+  window.print();
+}
+function registrarEtiquetasImpresas(){
+  if(!window.etiquetasImpresion||window.etiquetasImpresion.impresas)return;
+  if(window.etiquetasImpresion.modo==='todas'){
+    state.etiquetasPendientes={};
+    state.etiquetasInicialesImpresas=true;
+  }
   else Object.entries(window.etiquetasImpresion.conteo).forEach(([varianteId,cantidad])=>retirarEtiquetasPendientes(varianteId,cantidad));
   save();
-    window.etiquetasImpresion.impresas=true;
-    showToast('Etiquetas impresas y registradas');
+  window.etiquetasImpresion.impresas=true;
+  const button=document.querySelector('#labelPrintOverlay [data-mark-labels]');
+  if(button){button.disabled=true;button.textContent='Ya registradas';}
+  showToast('Etiquetas impresas y registradas');
+}
+function marcarEtiquetasImpresas(){
+  registrarEtiquetasImpresas();
+  cerrarEtiquetasStock();
 }
 
 function valorOrdenTalle(talle){
@@ -2873,6 +2888,11 @@ function importarDatos(event){
       if(!data.config.categorias) data.config.categorias = DEFAULT_CATEGORIAS.slice();
       if(!data.config.pins) data.config.pins = { admin:"1234", empleado:"0000" };
       if(!data.devoluciones) data.devoluciones = [];
+      if(typeof data.etiquetasInicialesImpresas!=='boolean'){
+        data.etiquetasInicialesImpresas=!!data.etiquetasPendientes
+          && Object.keys(data.etiquetasPendientes).length===0
+          && data.productos.some(producto=>producto.variantes.some(variante=>Number(variante.stock)>0));
+      }
       if(!data.etiquetasPendientes || typeof data.etiquetasPendientes!=='object') data.etiquetasPendientes = {};
       state = data;
       save();
