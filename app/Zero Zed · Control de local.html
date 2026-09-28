@@ -1344,7 +1344,7 @@ function renderStock(){
   <p class="section-note">Tus productos, talles/colores y cantidades disponibles.</p>
   <div class="row" style="margin-bottom:12px;">
     ${state.etiquetasInicialesImpresas ? '' : `<button class="btn" onclick="imprimirEtiquetasStock('todas')">Imprimir todas (${contarEtiquetasStock()})</button>`}
-    <button class="btn primary" onclick="imprimirEtiquetasStock('nuevas')" ${contarEtiquetasPendientes()===0?'disabled':''}>Imprimir nuevas (${contarEtiquetasPendientes()})</button>
+    <button class="btn primary" onclick="imprimirEtiquetasStock('nuevas')" ${contarEtiquetasPendientes()===0?'disabled':''}>Nuevas Etiquetas (${contarEtiquetasPendientes()})</button>
   </div>
 
   <div class="field" style="max-width:340px;">
@@ -1358,7 +1358,7 @@ function renderStock(){
     ${categorias.map(c=>`<button class="cat-scroll-chip ${stockCategoryFilter===c?'active':''}" onclick="stockCategoryFilter='${c.replace(/'/g,"\\'")}'; renderAll();">${c}</button>`).join('')}
   </div>
 
-  <button class="btn primary" onclick="showNuevoProducto=!showNuevoProducto; renderAll();">${showNuevoProducto?'Cancelar':'+ Nuevo producto'}</button>
+  <button class="btn primary" onclick="showNuevoProducto=!showNuevoProducto; renderAll();">${showNuevoProducto?'Cancelar':'+ Añadir prenda'}</button>
 
   ${showNuevoProducto ? `
   <div class="card" style="margin-top:12px;">
@@ -1554,7 +1554,7 @@ function renderProductoCard(p){
           <button onclick="ajustarStock('${p.id}','${v.id}',-1)">−</button>
           <button onclick="ajustarStock('${p.id}','${v.id}',1)">+</button>
         </div>
-        <button class="link-btn" onclick="eliminarVariante('${p.id}','${v.id}')">quitar</button>
+        <button class="link-btn" onclick="eliminarVariante('${p.id}','${v.id}')">Quitar</button>
       </div>
     `).join('')}
     <div class="row" style="margin-top:10px;">
