@@ -539,6 +539,15 @@
   .price-label-code{font:600 8pt var(--font-mono);letter-spacing:.2px;}
   .price-label-prices{display:grid;grid-template-columns:1fr 1fr;column-gap:3mm;row-gap:1mm;font:600 7pt var(--font-body);}
   .price-label-prices strong{font:700 8pt var(--font-mono);}
+  .exchange-results{max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:7px;background:var(--paper);overscroll-behavior:contain;}
+  .exchange-result{display:flex;width:100%;align-items:center;justify-content:space-between;gap:12px;padding:9px 10px;border:0;border-bottom:1px solid var(--line-soft);background:transparent;color:var(--ink);text-align:left;cursor:pointer;}
+  .exchange-result:last-child{border-bottom:0;}
+  .exchange-result:hover,.exchange-result:focus-visible{background:color-mix(in srgb,var(--mustard) 12%,var(--paper));outline:none;}
+  .exchange-result-name{font-weight:700;}
+  .exchange-result-meta{display:block;margin-top:2px;font-size:12px;color:var(--ink-soft);}
+  .exchange-result-code{font:600 12px var(--font-mono);color:var(--mustard);white-space:nowrap;}
+  .exchange-selected{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:7px;padding:8px 10px;border:1px solid var(--mustard);border-radius:7px;background:color-mix(in srgb,var(--mustard) 10%,var(--card));}
+  .exchange-empty{padding:9px 10px;color:var(--ink-soft);font-size:12.5px;}
   @media print{
     @page{size:A4;margin:8mm;}
     body.labels-printing{background:#FFFFFF !important;color:#101713 !important;}
@@ -1685,6 +1694,7 @@ let devReintegro = 'Efectivo';
 let devTipo = 'devolucion';
 let devCambioProdId = '';
 let devCambioVarId = '';
+let devCambioSearch = '';
 let devCambioCantidad = 1;
 let devCambioLineas = [];
 let devMetodoDiferencia = 'Efectivo';
@@ -1918,7 +1928,7 @@ function renderFormDevolucion(ctx){
   <hr class="stitch">
   <div class="field" style="max-width:260px;">
     <label>Qué necesita el cliente</label>
-    <select onchange="devTipo=this.value; devCambioProdId=''; devCambioVarId=''; devCambioCantidad=1; devCambioLineas=[]; renderAll();">
+    <select onchange="devTipo=this.value; devCambioProdId=''; devCambioVarId=''; devCambioSearch=''; devCambioCantidad=1; devCambioLineas=[]; renderAll();">
       <option value="devolucion" ${devTipo==='devolucion'?'selected':''}>Devolución con reintegro</option>
       <option value="cambio" ${devTipo==='cambio'?'selected':''}>Cambio por otro producto o talle</option>
     </select>
@@ -1941,19 +1951,11 @@ function renderFormDevolucion(ctx){
   </div>
   ${devTipo==='cambio' ? `
   <div class="row">
-    <div class="field" style="flex:2 1 220px;">
-      <label>Producto que se lleva</label>
-      <select onchange="devCambioProdId=this.value; devCambioVarId=''; renderAll();">
-        <option value="">Elegí un producto</option>
-        ${state.productos.map(p=>`<option value="${p.id}" ${devCambioProdId===p.id?'selected':''}>${p.nombre} · ${money(p.precio)}</option>`).join('')}
-      </select>
-    </div>
-    <div class="field" style="flex:2 1 220px;">
-      <label>Variante nueva</label>
-      <select onchange="devCambioVarId=this.value; renderAll();" ${!productoNuevo?'disabled':''}>
-        <option value="">Elegí talle y color</option>
-        ${productoNuevo ? productoNuevo.variantes.filter(v=>v.stock>0).map(v=>`<option value="${v.id}" ${devCambioVarId===v.id?'selected':''}>${v.talle} ${v.color}${v.codigo?(' ['+v.codigo+']'):''} · stock ${v.stock}</option>`).join('') : ''}
-      </select>
+    <div class="field" style="flex:3 1 320px;">
+      <label>Buscar prenda por clave o nombre</label>
+      <input type="text" data-dev-cambio-search placeholder="Ej: REM- o nombre de la prenda" value="${escaparHTML(devCambioSearch)}" oninput="actualizarBusquedaCambio(this)" onkeydown="buscarCambioConEnter(event)">
+      <div id="devCambioSearchResults">${renderResultadosCambio()}</div>
+      ${productoNuevo&&varianteNueva?`<div class="exchange-selected"><span><strong>${escaparHTML(productoNuevo.nombre)}</strong><span class="exchange-result-meta">${escaparHTML([varianteNueva.talle,varianteNueva.color].filter(Boolean).join(' / ')||'Único')} · ${escaparHTML(varianteNueva.codigo||'Sin clave')} · ${money(productoNuevo.precio)} · stock ${varianteNueva.stock}</span></span><button class="btn small ghost" onclick="limpiarSeleccionCambio()">Cambiar</button></div>`:''}
     </div>
     <div class="field" style="max-width:110px;">
       <label>Cantidad</label>
@@ -1976,6 +1978,60 @@ function renderFormDevolucion(ctx){
   `;
 }
 
+function resultadosBusquedaCambio(){
+  const termino=normalizarClave(devCambioSearch);
+  if(!termino)return [];
+  return state.productos.flatMap(producto=>producto.variantes
+    .filter(variante=>Number(variante.stock)>0)
+    .map(variante=>({producto,variante}))
+    .map(item=>{
+      const codigo=normalizarClave(item.variante.codigo||'');
+      const nombre=normalizarClave(item.producto.nombre||'');
+      const descripcion=normalizarClave(item.producto.descripcion||'');
+      const categoria=normalizarClave(item.producto.categoria||'');
+      const coincide=codigo.includes(termino)||nombre.includes(termino)||descripcion.includes(termino)||categoria.includes(termino);
+      const prioridad=codigo.startsWith(termino)?100:nombre.startsWith(termino)?80:codigo.includes(termino)?50:nombre.includes(termino)?30:10;
+      return {...item,coincide,prioridad};
+    })
+    .filter(item=>item.coincide)
+  ).sort((a,b)=>b.prioridad-a.prioridad||a.producto.nombre.localeCompare(b.producto.nombre,'es')).slice(0,MAX_SEARCH_ITEMS);
+}
+function renderResultadosCambio(){
+  if(!devCambioSearch.trim())return '';
+  const coincidencias=resultadosBusquedaCambio();
+  if(!coincidencias.length)return '<div class="exchange-empty">No hay prendas con stock que coincidan con la búsqueda.</div>';
+  return `<div class="exchange-results" role="listbox" aria-label="Resultados de prendas para cambio">${coincidencias.map(({producto,variante})=>
+    `<button type="button" class="exchange-result" role="option" onclick="seleccionarPrendaCambio('${escaparHTML(producto.id)}','${escaparHTML(variante.id)}')"><span><span class="exchange-result-name">${escaparHTML(producto.nombre)}</span><span class="exchange-result-meta">${escaparHTML([variante.talle,variante.color].filter(Boolean).join(' / ')||'Único')} · stock ${variante.stock} · ${money(producto.precio)}</span></span><span class="exchange-result-code">${escaparHTML(variante.codigo||'Sin clave')}</span></button>`
+  ).join('')}</div>`;
+}
+function actualizarBusquedaCambio(input){
+  devCambioSearch=input.value;
+  const resultados=document.getElementById('devCambioSearchResults');
+  if(resultados)resultados.innerHTML=renderResultadosCambio();
+}
+function buscarCambioConEnter(event){
+  if(event.key!=='Enter')return;
+  event.preventDefault();
+  const termino=normalizarClave(devCambioSearch);
+  const coincidencias=resultadosBusquedaCambio();
+  const exacta=coincidencias.find(({variante})=>normalizarClave(variante.codigo||'')===termino);
+  if(exacta)seleccionarPrendaCambio(exacta.producto.id,exacta.variante.id);
+}
+function seleccionarPrendaCambio(productoId,varianteId){
+  const producto=state.productos.find(p=>p.id===productoId);
+  const variante=producto&&producto.variantes.find(v=>v.id===varianteId&&v.stock>0);
+  if(!producto||!variante)return;
+  devCambioProdId=producto.id;
+  devCambioVarId=variante.id;
+  devCambioSearch='';
+  renderAll();
+}
+function limpiarSeleccionCambio(){
+  devCambioProdId='';
+  devCambioVarId='';
+  renderAll();
+}
+
 function agregarPrendaCambio(){
   const producto=state.productos.find(p=>p.id===devCambioProdId);
   const variante=producto&&producto.variantes.find(v=>v.id===devCambioVarId);
@@ -1988,7 +2044,7 @@ function agregarPrendaCambio(){
     varianteLabel:[variante.talle,variante.color].filter(Boolean).join(' / ')||'Único',
     codigo:variante.codigo||'',cantidad,precioUnit:Number(producto.precio||0)
   });
-  devCambioProdId='';devCambioVarId='';devCambioCantidad=1;
+  devCambioProdId='';devCambioVarId='';devCambioSearch='';devCambioCantidad=1;
   renderAll();
 }
 function quitarPrendaCambio(index){devCambioLineas.splice(index,1);renderAll();}
@@ -2060,7 +2116,7 @@ function confirmarDevolucion(){
   save();
   showToast(devTipo==='cambio' ? 'Cambio registrado' : 'Devolución y reintegro registrados');
   devVentaId=''; devItemIdx=''; devCantidad=1; devMotivo=''; devReintegro='Efectivo';
-  devTipo='devolucion'; devCambioProdId=''; devCambioVarId=''; devCambioCantidad=1; devCambioLineas=[]; devMetodoDiferencia='Efectivo';
+  devTipo='devolucion'; devCambioProdId=''; devCambioVarId=''; devCambioSearch=''; devCambioCantidad=1; devCambioLineas=[]; devMetodoDiferencia='Efectivo';
   devManualProdId=''; devManualVarId='';
   renderAll();
 }
