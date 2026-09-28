@@ -882,6 +882,41 @@ function renderGraficoVentasDiarias(){
       <span class="sales-chart-label">${d.fecha.slice(8,10)}/${d.fecha.slice(5,7)}</span>
     </div>`).join('')}</div>`;
 }
+function gananciaPorPrendaDeFecha(fecha){
+  const mapa = {}; const sinCosto = new Set();
+  ventasDe(fecha).forEach(v=>v.items.forEach(i=>{
+    const prod = state.productos.find(p=>p.id===i.productoId);
+    const costo = i.costoUnit!=null ? Number(i.costoUnit) : Number(prod ? prod.costo : 0);
+    if(!(costo>0)){ sinCosto.add(i.nombre); return; }
+    const m = mapa[i.nombre] = mapa[i.nombre] || {nombre:i.nombre, cantidad:0, ganancia:0, venta:0};
+    m.cantidad += i.cantidad;
+    m.venta += i.cantidad*i.precioUnit;
+    m.ganancia += i.cantidad*(i.precioUnit-costo);
+  }));
+  const filas = Object.values(mapa).sort((a,b)=>b.ganancia-a.ganancia);
+  return {filas, sinCosto:[...sinCosto], total:filas.reduce((t,f)=>t+f.ganancia,0)};
+}
+function renderGraficoGananciaPrendas(){
+  const {filas, sinCosto, total} = gananciaPorPrendaDeFecha(historialFecha);
+  const max = Math.max(1,...filas.map(f=>Math.abs(f.ganancia)));
+  const barras = filas.length===0
+    ? '<p class="empty">Sin ventas con costo cargado ese día.</p>'
+    : filas.map(f=>`
+      <div style="display:grid;grid-template-columns:minmax(90px,1.3fr) 3fr auto;gap:10px;align-items:center;margin:8px 0;font-size:13px;" title="${escaparHTML(f.nombre)} · ${f.cantidad} u. · vendido ${money(f.venta)}">
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escaparHTML(f.nombre)} <span class="muted">×${f.cantidad}</span></span>
+        <div style="background:var(--line-soft);border-radius:3px;height:16px;overflow:hidden;">
+          <div style="height:100%;width:${Math.max(2,(Math.abs(f.ganancia)/max)*100)}%;background:${f.ganancia<0?'var(--brick)':'var(--mustard)'};"></div>
+        </div>
+        <span class="num" style="min-width:70px;text-align:right;">${money(f.ganancia)}</span>
+      </div>`).join('');
+  return `
+  <div class="card">
+    <div class="card-title"><span>Ganancia por prenda · ${fmtDate(historialFecha)}</span><span class="num">${money(total)}</span></div>
+    <p class="section-note" style="margin-bottom:4px;">Ganancia = (precio de venta − costo unitario) × cantidad. Solo visible para el administrador.</p>
+    ${barras}
+    ${sinCosto.length ? `<p class="section-note" style="margin-top:8px;">Sin costo cargado (no incluidas): ${sinCosto.map(escaparHTML).join(', ')}.</p>` : ''}
+  </div>`;
+}
 function cantidadPendienteDeDevolver(venta, item){
   const itemIdx = venta.items.indexOf(item);
   const devuelta = state.devoluciones.filter(d=>d.ventaId===venta.id && (d.itemIdx!=null ? Number(d.itemIdx)===itemIdx : d.varianteId===item.varianteId)).reduce((total,d)=>total+Number(d.cantidad||0),0);
@@ -920,11 +955,11 @@ function aplicarAjusteDevolucionPorMetodo(porMetodo, devolucion){
 /* ---------- navegación ---------- */
 let currentTab = 'vender';
 const ALL_TABS = [
+  {id:'turno', label:'Turno', roles:['admin']},
   {id:'vender', label:'Vender', roles:['admin','empleado']},
   {id:'stock', label:'Stock', roles:['admin','empleado']},
   {id:'devoluciones', label:'Devoluciones', roles:['admin','empleado']},
   {id:'historial', label:'Historial', roles:['admin','empleado']},
-  {id:'turno', label:'Turno', roles:['admin']},
   {id:'compras', label:'Compras', roles:['admin']},
   {id:'ajustes', label:'Ajustes', roles:['admin']}
 ];
@@ -1276,7 +1311,7 @@ function agregarAlCarrito(){
   cart.push({
     productoId:p.id, nombre:p.nombre + (p.descripcion?(' ('+p.descripcion+')'):''), categoria:p.categoria,
     varianteId:v.id, codigo:v.codigo||'', talle:v.talle||'', color:v.color||'', varianteLabel:[v.talle,v.color].filter(x=>x&&x!=='-').join(' / ')||'Único',
-    cantidad:qty, precioUnit:p.precio
+    cantidad:qty, precioUnit:p.precio, costoUnit:Number(p.costo)||0
   });
   ventaSelQty = 1;
   renderAll();
@@ -1379,10 +1414,10 @@ function renderStock(){
         <label>Descripción / diseño (opcional)</label>
         <input type="text" placeholder="Ej: bolsillo cargo, estampa frontal..." value="${nuevoProd.descripcion}" oninput="nuevoProd.descripcion=this.value">
       </div>
-      <div class="field">
+      ${session === 'admin' ? `<div class="field">
         <label>Costo unitario</label>
         <input type="number" min="0" placeholder="0" value="${nuevoProd.costo}" oninput="nuevoProd.costo=this.value">
-      </div>
+      </div>` : ''}
       <div class="field">
         <label>Precio de venta</label>
         <input type="number" min="0" placeholder="0" value="${nuevoProd.precio}" oninput="nuevoProd.precio=this.value">
@@ -1531,7 +1566,7 @@ function renderProductoCard(p){
   return `
   <div class="card">
     <div class="card-title">
-      <span>${p.nombre} <span class="muted num" style="font-size:12px;">· costo ${money(p.costo)} · venta ${money(p.precio)}</span></span>
+      <span>${p.nombre} <span class="muted num" style="font-size:12px;">· ${session === 'admin' ? 'costo '+money(p.costo)+' · ' : ''}venta ${money(p.precio)}</span></span>
       <span style="display:flex;align-items:center;gap:8px;"><span class="pill ${totalStock<=0?'low':totalStock<=LOW_STOCK?'mid':'ok'}">${totalStock} en stock</span><button class="btn small ghost" onclick="iniciarEdicionProducto('${p.id}')">Editar</button></span>
     </div>
     ${p.descripcion ? `<div class="prod-desc">${p.descripcion}</div>` : ''}
@@ -1540,7 +1575,7 @@ function renderProductoCard(p){
         <div class="field"><label>Nombre</label><input type="text" value="${productoEditDraft.nombre}" oninput="productoEditDraft.nombre=this.value"></div>
         <div class="field"><label>Categoría</label><select oninput="productoEditDraft.categoria=this.value">${state.config.categorias.map(c=>`<option value="${c}" ${productoEditDraft.categoria===c?'selected':''}>${c}</option>`).join('')}</select></div>
         <div class="field"><label>Descripción</label><input type="text" value="${productoEditDraft.descripcion}" oninput="productoEditDraft.descripcion=this.value"></div>
-        <div class="field"><label>Costo</label><input type="number" min="0" value="${productoEditDraft.costo}" oninput="productoEditDraft.costo=this.value"></div>
+        ${session === 'admin' ? `<div class="field"><label>Costo</label><input type="number" min="0" value="${productoEditDraft.costo}" oninput="productoEditDraft.costo=this.value"></div>` : ''}
         <div class="field"><label>Precio</label><input type="number" min="0" value="${productoEditDraft.precio}" oninput="productoEditDraft.precio=this.value"></div>
       </div>
       <button class="btn small primary" onclick="guardarEdicionProducto('${p.id}')">Guardar cambios</button>
@@ -1606,7 +1641,7 @@ function guardarEdicionProducto(id){
   producto.nombre = productoEditDraft.nombre.trim();
   producto.categoria = productoEditDraft.categoria;
   producto.descripcion = productoEditDraft.descripcion.trim();
-  producto.costo = Number(productoEditDraft.costo)||0;
+  if(session==='admin') producto.costo = Number(productoEditDraft.costo)||0;
   producto.precio = Number(productoEditDraft.precio)||0;
   save();
   productoEditandoId = null; productoEditDraft = null;
@@ -1619,7 +1654,7 @@ function crearProducto(){
   if(!nuevoProd.nombre.trim()){ showToast('Ponele un nombre al producto'); return; }
   state.productos.push({
     id: uid(), nombre: nuevoProd.nombre.trim(), descripcion: nuevoProd.descripcion.trim(),
-    categoria: nuevoProd.categoria, costo: Number(nuevoProd.costo)||0, precio: Number(nuevoProd.precio)||0, variantes: []
+    categoria: nuevoProd.categoria, costo: session==='admin' ? (Number(nuevoProd.costo)||0) : 0, precio: Number(nuevoProd.precio)||0, variantes: []
   });
   save();
   nuevoProd = {nombre:'', descripcion:'', categoria: state.config.categorias[0]||'', costo:'', precio:''};
@@ -1633,11 +1668,11 @@ function guardarCargaRapidaStock(){
   const categoria = nuevoProd.categoria || state.config.categorias[0] || 'Otros';
   let producto = state.productos.find(p=>p.nombre.toLowerCase()===nombre.toLowerCase());
   if(!producto){
-    producto = {id:uid(), nombre, descripcion:nuevoProd.descripcion.trim(), categoria, costo:Number(nuevoProd.costo)||0, precio:Number(nuevoProd.precio)||0, variantes:[]};
+    producto = {id:uid(), nombre, descripcion:nuevoProd.descripcion.trim(), categoria, costo: session==='admin' ? (Number(nuevoProd.costo)||0) : 0, precio:Number(nuevoProd.precio)||0, variantes:[]};
     state.productos.push(producto);
   }else{
     if(nuevoProd.descripcion.trim()) producto.descripcion = nuevoProd.descripcion.trim();
-    if(nuevoProd.costo!=='') producto.costo = Number(nuevoProd.costo)||0;
+    if(session==='admin' && nuevoProd.costo!=='') producto.costo = Number(nuevoProd.costo)||0;
     if(nuevoProd.precio!=='') producto.precio = Number(nuevoProd.precio)||0;
     producto.categoria = categoria;
   }
@@ -2368,6 +2403,8 @@ function renderHistorial(){
     <p class="section-note" style="margin-bottom:4px;">Importes netos: ventas menos devoluciones y diferencias de cambios.</p>
     ${renderGraficoVentasDiarias()}
   </div>
+
+  ${session === 'admin' ? renderGraficoGananciaPrendas() : ''}
 
   <div class="card">
     <div class="card-title">Más vendido ese día</div>
