@@ -234,6 +234,11 @@
     white-space:nowrap;
   }
   .cat-scroll-chip.active{background:var(--mustard);color:var(--navy);border-color:var(--mustard-dark);}
+  .sales-chart{display:flex;align-items:flex-end;gap:8px;height:190px;padding:12px 4px 0;border-bottom:2px solid var(--ink);}
+  .sales-chart-day{height:100%;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:5px;min-width:34px;}
+  .sales-chart-value{font-family:var(--font-mono);font-size:10px;color:var(--ink-soft);white-space:nowrap;}
+  .sales-chart-bar{width:100%;max-width:48px;min-height:3px;background:var(--mustard);border:1px solid var(--mustard-dark);border-bottom:none;transition:height .2s;}
+  .sales-chart-label{font-size:10.5px;color:var(--ink-soft);}
 
   .receipt-wrap{display:flex;justify-content:center;padding:30px 12px;min-height:100vh;background:var(--paper);}
   .receipt{background:#ffffff;color:#14181A;width:100%;max-width:340px;padding:22px 20px;border-radius:2px;box-shadow:var(--shadow);font-family:var(--font-mono);}
@@ -443,13 +448,16 @@ function renderHistorialClave(clave){
   if(!clave) return '';
   const termino = clave.toLowerCase();
   const coincidencias = [];
-  state.productos.forEach(p=>p.variantes.forEach(v=>{
-    if((v.codigo||'').toLowerCase().includes(termino)) coincidencias.push({p,v});
-  }));
+  state.productos.forEach(p=>{
+    const coincideProducto = p.nombre.toLowerCase().includes(termino) || (p.descripcion||'').toLowerCase().includes(termino) || (p.categoria||'').toLowerCase().includes(termino);
+    p.variantes.forEach(v=>{
+      if(coincideProducto || (v.codigo||'').toLowerCase().includes(termino)) coincidencias.push({p,v});
+    });
+  });
   return `
     <div class="card" style="margin-top:10px;">
-      <div class="card-title">Historial de prendas con clave "${clave}"</div>
-      ${coincidencias.length===0 ? '<p class="empty">No hay prendas con esa clave.</p>' : `
+      <div class="card-title">Productos encontrados: "${clave}"</div>
+      ${coincidencias.length===0 ? '<p class="empty">No hay prendas que coincidan con esa búsqueda.</p>' : `
       <table><thead><tr><th>Prenda</th><th>Categoría</th><th>Clave</th><th>Talle / color</th><th>Stock</th></tr></thead>
       <tbody>${coincidencias.map(({p,v})=>`<tr>
         <td>${p.nombre}</td><td>${p.categoria||'-'}</td><td class="num">${v.codigo||'-'}</td>
@@ -498,9 +506,40 @@ function actualizarResultadosStock(){
 }
 function turnoAbierto(){ return state.turnos.find(t=>t.abierto); }
 function ventasDe(fecha){ return state.ventas.filter(v=>v.fecha===fecha); }
+function fechaSumandoDias(fecha, dias){
+  const d = new Date(fecha+'T12:00:00');
+  d.setDate(d.getDate()+dias);
+  return d.toISOString().slice(0,10);
+}
+function totalNetoDeFecha(fecha){
+  const ventas = ventasDe(fecha).reduce((total,v)=>total+Number(v.total||0),0);
+  const ajustes = state.devoluciones.filter(d=>d.fecha===fecha).reduce((total,d)=>total+(d.tipo==='cambio'?Number(d.montoDiferencia||0):-Number(d.montoDevuelto||0)),0);
+  return ventas+ajustes;
+}
+function renderGraficoVentasDiarias(){
+  const fechaFinal = historialFecha || todayStr();
+  const datos = Array.from({length:7},(_,i)=>{
+    const fecha = fechaSumandoDias(fechaFinal,i-6);
+    return {fecha, total:totalNetoDeFecha(fecha)};
+  });
+  const maximo = Math.max(1,...datos.map(d=>d.total));
+  return `<div class="sales-chart">${datos.map(d=>`
+    <div class="sales-chart-day" title="${fmtDate(d.fecha)} · ${money(d.total)}">
+      <span class="sales-chart-value">${money(d.total)}</span>
+      <div class="sales-chart-bar" style="height:${Math.max(3,(Math.max(0,d.total)/maximo)*145)}px;"></div>
+      <span class="sales-chart-label">${d.fecha.slice(8,10)}/${d.fecha.slice(5,7)}</span>
+    </div>`).join('')}</div>`;
+}
 function cantidadPendienteDeDevolver(venta, item){
-  const devuelta = state.devoluciones.filter(d=>d.ventaId===venta.id && d.varianteId===item.varianteId).reduce((total,d)=>total+Number(d.cantidad||0),0);
+  const itemIdx = venta.items.indexOf(item);
+  const devuelta = state.devoluciones.filter(d=>d.ventaId===venta.id && (d.itemIdx!=null ? Number(d.itemIdx)===itemIdx : d.varianteId===item.varianteId)).reduce((total,d)=>total+Number(d.cantidad||0),0);
   return Math.max(0, Number(item.cantidad||0)-devuelta);
+}
+function esCambioDevolucion(devolucion){
+  return devolucion.tipo==='cambio' || devolucion.reintegro==='Sin reintegro';
+}
+function ajusteEconomicoDevolucion(devolucion){
+  return esCambioDevolucion(devolucion) ? Number(devolucion.montoDiferencia||0) : -Number(devolucion.montoDevuelto||0);
 }
 
 /* ---------- navegación ---------- */
@@ -606,7 +645,6 @@ function renderRecibo(ventaId){
     <div class="receipt" style="position:relative;">
       <button class="no-print" onclick="cerrarComprobante()" title="Cerrar sin guardar" style="position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;border:1.5px solid #14181A;background:#fff;color:#14181A;font-size:15px;font-weight:700;cursor:pointer;line-height:1;">✕</button>
       <div class="receipt-head">
-        <img src="${LOGO_DATA_URI}" alt="Zero Zed">
         <div class="rname">ZERO ZED</div>
         <div class="rmeta">${fmtDate(v.fecha)} · ${v.hora}hs</div>
         <div class="rmeta">Comprobante interno · no válido como factura</div>
@@ -634,12 +672,10 @@ async function guardarComprobante(ventaId){
   if(typeof window.jspdf === 'undefined'){ showToast('El generador de PDF sigue cargando, probá de nuevo en un segundo'); return; }
   const { jsPDF } = window.jspdf;
   const anchoMM = 72;
-  const altoMM = 60 + v.items.length*10 + (v.recargoPct>0?6:0);
+  const altoMM = 48 + v.items.length*10 + (v.recargoPct>0?6:0);
   const doc = new jsPDF({unit:'mm', format:[anchoMM, altoMM]});
   const cx = anchoMM/2;
   let y = 8;
-
-  try{ doc.addImage(LOGO_DATA_URI, 'PNG', cx-8, y, 16, 13.2); y += 16; }catch(e){ /* si falla el logo, seguimos sin él */ }
 
   doc.setFont('helvetica','bold'); doc.setFontSize(13);
   doc.text('ZERO ZED', cx, y, {align:'center'}); y += 5;
@@ -932,11 +968,12 @@ function renderStock(){
 
   ${showNuevoProducto ? `
   <div class="card" style="margin-top:12px;">
-    <div class="card-title">Nuevo producto</div>
+    <div class="card-title">Carga rápida de prendas</div>
+    <p class="section-note">Completá una variante por vez. Podés escribir varios talles o colores separados por coma, por ejemplo: 1,2,3.</p>
     <div class="row">
       <div class="field" style="flex:2 1 200px;">
-        <label>Nombre</label>
-        <input type="text" placeholder="Ej: Jean recto azul" value="${nuevoProd.nombre}" oninput="nuevoProd.nombre=this.value">
+        <label>Prenda</label>
+        <input type="text" placeholder="Ej: Remera lisa Corteiz" value="${nuevoProd.nombre}" oninput="nuevoProd.nombre=this.value">
       </div>
       <div class="field">
         <label>Categoría</label>
@@ -957,8 +994,13 @@ function renderStock(){
         <input type="number" min="0" placeholder="0" value="${nuevoProd.precio}" oninput="nuevoProd.precio=this.value">
       </div>
     </div>
-    <p class="section-note" style="margin:-4px 0 10px;">Usá la descripción para diferenciar productos parecidos: mismo color, distinto diseño o estampa.</p>
-    <button class="btn primary" onclick="crearProducto()">Guardar producto</button>
+    <div class="row">
+      <div class="field"><label>Talles</label><input type="text" placeholder="1,2,3 o S,M,L" value="${nuevaVariante.talle}" oninput="nuevaVariante.talle=this.value"></div>
+      <div class="field"><label>Colores</label><input type="text" placeholder="Negro,Blanco" value="${nuevaVariante.color}" oninput="nuevaVariante.color=this.value"></div>
+      <div class="field" style="max-width:110px;"><label>Cantidad</label><input type="number" min="1" value="${nuevaVariante.stock||1}" oninput="nuevaVariante.stock=this.value"></div>
+      <div class="field" style="flex:1 1 150px;"><label>Clave base (opcional)</label><input type="text" placeholder="REM-SAK" value="${nuevaVariante.codigo}" oninput="nuevaVariante.codigo=this.value"></div>
+    </div>
+    <button class="btn primary" onclick="guardarCargaRapidaStock()">Agregar al stock</button>
   </div>` : ''}
 
   <hr class="stitch">
@@ -985,8 +1027,25 @@ function renderResultadosStock(productosFiltrados,categorias){
   ${state.productos.length>0 && productosFiltrados.length===0 ? '<p class="empty">No encontramos productos con ese filtro.</p>' : ''}`;
 }
 
+function valorOrdenTalle(talle){
+  const valor = String(talle||'').trim().toUpperCase();
+  const equivalencias = {S:1,M:2,L:3,XL:4,XXL:5};
+  if(equivalencias[valor]) return equivalencias[valor];
+  if(/^\d+$/.test(valor)) return Number(valor);
+  return Number.POSITIVE_INFINITY;
+}
+function compararVariantesPorTalle(a,b){
+  const ordenA = valorOrdenTalle(a.talle);
+  const ordenB = valorOrdenTalle(b.talle);
+  if(ordenA!==ordenB) return ordenA-ordenB;
+  const talleA = String(a.talle||'').toUpperCase();
+  const talleB = String(b.talle||'').toUpperCase();
+  if(talleA!==talleB) return talleA.localeCompare(talleB,'es');
+  return String(a.color||'').localeCompare(String(b.color||''),'es');
+}
 function renderProductoCard(p){
   const totalStock = p.variantes.reduce((a,v)=>a+v.stock,0);
+  const variantesOrdenadas = p.variantes.slice().sort(compararVariantesPorTalle);
   return `
   <div class="card">
     <div class="card-title">
@@ -1005,7 +1064,7 @@ function renderProductoCard(p){
       <button class="btn small primary" onclick="guardarEdicionProducto('${p.id}')">Guardar cambios</button>
       <button class="btn small ghost" onclick="cancelarEdicionProducto()">Cancelar</button>
     ` : ''}
-    ${p.variantes.length===0 ? '<p class="empty">Sin variantes cargadas todavía.</p>' : p.variantes.map(v=>`
+    ${p.variantes.length===0 ? '<p class="empty">Sin variantes cargadas todavía.</p>' : variantesOrdenadas.map(v=>`
       <div class="variant-row">
         <span class="vlabel">${v.talle||'-'} ${v.color?('· '+v.color):''} ${v.codigo?`<span class="pill mid" style="margin-left:4px;">${v.codigo}</span>`:''}</span>
         <span class="pill ${v.stock<=0?'low':v.stock<=LOW_STOCK?'mid':'ok'}">${v.stock}</span>
@@ -1086,6 +1145,42 @@ function crearProducto(){
   showToast('Producto creado');
   renderAll();
 }
+function guardarCargaRapidaStock(){
+  const nombre = nuevoProd.nombre.trim();
+  if(!nombre){ showToast('Escribí el nombre de la prenda'); return; }
+  const categoria = nuevoProd.categoria || state.config.categorias[0] || 'Otros';
+  let producto = state.productos.find(p=>p.nombre.toLowerCase()===nombre.toLowerCase());
+  if(!producto){
+    producto = {id:uid(), nombre, descripcion:nuevoProd.descripcion.trim(), categoria, costo:Number(nuevoProd.costo)||0, precio:Number(nuevoProd.precio)||0, variantes:[]};
+    state.productos.push(producto);
+  }else{
+    if(nuevoProd.descripcion.trim()) producto.descripcion = nuevoProd.descripcion.trim();
+    if(nuevoProd.costo!=='') producto.costo = Number(nuevoProd.costo)||0;
+    if(nuevoProd.precio!=='') producto.precio = Number(nuevoProd.precio)||0;
+    producto.categoria = categoria;
+  }
+  if(!state.config.categorias.some(c=>c.toLowerCase()===categoria.toLowerCase())) state.config.categorias.push(categoria);
+  const talles = (nuevaVariante.talle.trim()||'Único').split(/[,;]+/).map(x=>x.trim()).filter(Boolean);
+  const colores = (nuevaVariante.color.trim()||'').split(/[,;]+/).map(x=>x.trim()).filter(Boolean);
+  const coloresFinales = colores.length ? colores : [''];
+  const cantidad = Math.max(1, parseInt(nuevaVariante.stock)||0);
+  const codigoBase = (nuevaVariante.codigo||'').trim().toUpperCase();
+  let agregadas = 0;
+  talles.forEach(talle=>coloresFinales.forEach(color=>{
+    const tienePlantilla = codigoBase.includes('{TALLE}') || codigoBase.includes('{COLOR}');
+    const codigo = codigoBase ? (tienePlantilla ? codigoBase.replace('{TALLE}',talle.toUpperCase()).replace('{COLOR}',color.toUpperCase()) : codigoBase+'-'+talle.toUpperCase()+(color?'-'+color.toUpperCase():'')) : sugerirCodigoVariante(producto.nombre,talle,color,categoria);
+    let variante = producto.variantes.find(v=>v.codigo===codigo || (!codigo && v.talle.toLowerCase()===talle.toLowerCase() && v.color.toLowerCase()===color.toLowerCase()));
+    if(!variante){ variante={id:uid(),talle,color,codigo,stock:0}; producto.variantes.push(variante); }
+    variante.stock += cantidad;
+    agregadas++;
+  }));
+  save();
+  nuevoProd={nombre:'',descripcion:'',categoria:state.config.categorias[0]||'',costo:'',precio:''};
+  nuevaVariante={talle:'',color:'',stock:'',codigo:''};
+  showNuevoProducto=false;
+  showToast(agregadas+' variante(s) agregada(s) al stock');
+  renderAll();
+}
 function eliminarProducto(id){
   if(!confirm('¿Eliminar este producto y todas sus variantes?')) return;
   state.productos = state.productos.filter(p=>p.id!==id);
@@ -1115,37 +1210,66 @@ function ajustarStock(prodId,varId,delta){
 }
 
 /* =================== DEVOLUCIONES =================== */
-let devFecha = todayStr();
+let devFecha = '';
 let devVentaId = '';
 let devItemIdx = '';
 let devCantidad = 1;
 let devMotivo = '';
 let devReintegro = 'Efectivo';
+let devTipo = 'devolucion';
+let devProductoNuevoId = '';
+let devVarianteNuevaId = '';
+let devMetodoDiferencia = 'Efectivo';
 // modo manual (cuando la venta no está en el sistema)
 let devManualProdId = '';
 let devManualVarId = '';
+let devManualSearch = '';
+let devManualCategory = '';
+
+function productosManualDevolucion(){
+  const term = devManualSearch.trim().toLowerCase();
+  return state.productos.filter(p=>{
+    if(devManualCategory && p.categoria!==devManualCategory) return false;
+    if(!term) return true;
+    return p.nombre.toLowerCase().includes(term) || (p.descripcion||'').toLowerCase().includes(term) ||
+      p.id.toLowerCase().includes(term) || p.categoria.toLowerCase().includes(term) ||
+      p.variantes.some(v=>(v.codigo||'').toLowerCase().includes(term));
+  });
+}
+function actualizarBusquedaDevolucionManual(tipo,input){
+  if(tipo==='texto') devManualSearch=input.value;
+  if(tipo==='categoria') devManualCategory=input.value;
+  const select=document.getElementById('devManualProductSelect');
+  if(!select) return;
+  select.innerHTML='<option value="">Elegí un producto</option>'+productosManualDevolucion().map(p=>`<option value="${p.id}">${p.nombre}${p.descripcion?(' — '+p.descripcion):''}</option>`).join('');
+  select.value=devManualProdId;
+}
 
 function renderDevoluciones(){
-  const ventasDia = ventasDe(devFecha).filter(v=>v.items.some(i=>cantidadPendienteDeDevolver(v,i)>0));
-  const ventaSel = ventasDia.find(v=>v.id===devVentaId);
+  const ventasPendientes = state.ventas.filter(v=>(!devFecha || v.fecha===devFecha) && v.items.some(i=>cantidadPendienteDeDevolver(v,i)>0)).slice().reverse();
+  const ventaSel = ventasPendientes.find(v=>v.id===devVentaId);
   const itemSel = ventaSel && ventaSel.items[devItemIdx] && cantidadPendienteDeDevolver(ventaSel,ventaSel.items[devItemIdx])>0 ? ventaSel.items[devItemIdx] : null;
   const historial = state.devoluciones.slice().reverse();
 
   const manualProd = state.productos.find(p=>p.id===devManualProdId);
+  const productosManual = productosManualDevolucion();
 
   return `
   <h2 class="section-title">Devoluciones</h2>
-  <p class="section-note">Registrá un cambio o devolución de un producto ya vendido: repone el stock y, si corresponde, descuenta el reintegro de la caja del turno actual.</p>
+  <p class="section-note">Se muestran ventas de cualquier fecha con prendas pendientes de devolución. El reintegro o la diferencia se registra en el turno que está abierto ahora.</p>
 
   <div class="card">
     <div class="card-title">Buscar la venta</div>
     <div class="row">
-      <div class="field" style="max-width:170px;"><label>Fecha de la venta</label><input type="date" value="${devFecha}" onchange="devFecha=this.value; devVentaId=''; devItemIdx=''; renderAll();"></div>
+      <div class="field" style="max-width:210px;"><label>Fecha de compra</label><input type="date" title="Opcional: dejalo vacío para buscar en todas las fechas" value="${devFecha}" onchange="devFecha=this.value; devVentaId=''; devItemIdx=''; renderAll();"></div>
       <div class="field" style="flex:2 1 240px;">
-        <label>Venta</label>
+        <label>Venta pendiente (${ventasPendientes.length})</label>
         <select onchange="devVentaId=this.value; devItemIdx=''; renderAll();">
-          <option value="">Elegí una venta de ese día</option>
-          ${ventasDia.map(v=>`<option value="${v.id}" ${devVentaId===v.id?'selected':''}>${v.hora} · ${v.metodoPago} · ${money(v.total)}</option>`).join('')}
+          <option value="">Elegí una venta de cualquier fecha</option>
+          ${ventasPendientes.map(v=>{
+            const pendientes=v.items.filter(i=>cantidadPendienteDeDevolver(v,i)>0).map(i=>cantidadPendienteDeDevolver(v,i)+'x '+i.nombre+(i.varianteLabel?' ('+i.varianteLabel+')':'' )).join(', ');
+            return `<option value="${v.id}" ${devVentaId===v.id?'selected':''}>${fmtDate(v.fecha)} · ${v.hora} · ${pendientes} · ${money(v.total)}</option>`;
+          }).join('')}
         </select>
       </div>
       <div class="field" style="flex:2 1 200px;">
@@ -1158,7 +1282,7 @@ function renderDevoluciones(){
     </div>
     ${itemSel ? renderFormDevolucion({
         origen:'venta', ventaId: ventaSel.id, productoId:itemSel.productoId, varianteId:itemSel.varianteId,
-        nombre:itemSel.nombre, varianteLabel:itemSel.varianteLabel, precioUnit:itemSel.precioUnit, maxCantidad:cantidadPendienteDeDevolver(ventaSel,itemSel)
+          nombre:itemSel.nombre, varianteLabel:itemSel.varianteLabel, codigo:itemSel.codigo||'', precioUnit:itemSel.precioUnit, maxCantidad:cantidadPendienteDeDevolver(ventaSel,itemSel)
       }) : ''}
   </div>
 
@@ -1166,11 +1290,13 @@ function renderDevoluciones(){
     <div class="card-title">¿La venta no está en el sistema? Devolución manual</div>
     <p class="section-note" style="margin-top:-4px;">Elegí directamente el producto y la variante a devolver.</p>
     <div class="row">
+      <div class="field" style="flex:2 1 220px;"><label>Buscar por nombre o clave</label><input type="text" data-dev-manual-search placeholder="Ej: REM-SAK-BLA-02" value="${devManualSearch}" oninput="actualizarBusquedaDevolucionManual('texto', this)"></div>
+      <div class="field"><label>Filtrar por categoría</label><select onchange="devManualCategory=this.value; devManualProdId=''; devManualVarId=''; renderAll();"><option value="">Todas</option>${state.config.categorias.map(c=>`<option value="${c}" ${devManualCategory===c?'selected':''}>${c}</option>`).join('')}</select></div>
       <div class="field" style="flex:2 1 200px;">
         <label>Producto</label>
-        <select onchange="devManualProdId=this.value; devManualVarId=''; renderAll();">
+        <select id="devManualProductSelect" onchange="devManualProdId=this.value; devManualVarId=''; renderAll();">
           <option value="">Elegí un producto</option>
-          ${state.productos.map(p=>`<option value="${p.id}" ${devManualProdId===p.id?'selected':''}>${p.nombre}</option>`).join('')}
+          ${productosManual.map(p=>`<option value="${p.id}" ${devManualProdId===p.id?'selected':''}>${p.nombre}${p.descripcion?(' — '+p.descripcion):''}</option>`).join('')}
         </select>
       </div>
       <div class="field" style="flex:1 1 160px;">
@@ -1186,7 +1312,7 @@ function renderDevoluciones(){
         return renderFormDevolucion({
           origen:'manual', ventaId:null, productoId:manualProd.id, varianteId:v.id,
           nombre:manualProd.nombre, varianteLabel:[v.talle,v.color].filter(x=>x&&x!=='-').join(' / ')||'Único',
-          precioUnit:manualProd.precio, maxCantidad:9999
+          codigo:v.codigo||'', precioUnit:manualProd.precio, maxCantidad:9999
         });
       })() : ''}
   </div>
@@ -1194,13 +1320,14 @@ function renderDevoluciones(){
   <div class="card">
     <div class="card-title">Historial de devoluciones</div>
     ${historial.length===0 ? '<p class="empty">Todavía no registraste devoluciones.</p>' : `
-    <table><thead><tr><th>Fecha</th><th>Producto</th><th>Cant.</th><th>Motivo</th><th>Reintegro</th><th></th></tr></thead>
+    <table><thead><tr><th>Fecha</th><th>Tipo</th><th>Producto devuelto</th><th>Producto recibido</th><th>Cant.</th><th>Importe</th><th></th></tr></thead>
     <tbody>${historial.map(d=>`<tr>
       <td>${fmtDate(d.fecha)} ${d.hora}</td>
-      <td>${d.nombre}${d.varianteLabel?(' ('+d.varianteLabel+')'):''}</td>
+      <td>${esCambioDevolucion(d)?'Cambio':'Devolución'}</td>
+      <td>${d.nombre}${d.varianteLabel?(' ('+d.varianteLabel+')'):''}${d.motivo?'<br><span class="muted">'+d.motivo+'</span>':''}</td>
+      <td>${esCambioDevolucion(d) ? (d.nombreNuevo ? d.nombreNuevo+(d.varianteNuevaLabel?' ('+d.varianteNuevaLabel+')':'') : 'Cambio sin reintegro') : 'Reintegro '+d.reintegro}</td>
       <td class="num">${d.cantidad}</td>
-      <td>${d.motivo||'-'}</td>
-      <td class="num">${d.reintegro==='Sin reintegro'?'-':money(d.montoDevuelto)+' ('+d.reintegro+')'}</td>
+      <td class="num" style="color:var(--brick);">-${money(d.montoDevuelto)}</td>
       <td><button class="link-btn" onclick="eliminarDevolucion('${d.id}')">eliminar</button></td>
     </tr>`).join('')}</tbody></table>`}
   </div>
@@ -1209,8 +1336,21 @@ function renderDevoluciones(){
 
 function renderFormDevolucion(ctx){
   window._devCtx = ctx; // guardamos el contexto actual para confirmarDevolucion()
+  const productoNuevo = state.productos.find(p=>p.id===devProductoNuevoId);
+  const varianteNueva = productoNuevo && productoNuevo.variantes.find(v=>v.id===devVarianteNuevaId);
+  const precioViejo = ctx.precioUnit*devCantidad;
+  const precioNuevo = varianteNueva ? productoNuevo.precio*devCantidad : 0;
+  const diferencia = precioNuevo-precioViejo;
+  const esCambioDeTalle = productoNuevo && productoNuevo.id===ctx.productoId;
   return `
   <hr class="stitch">
+  <div class="field" style="max-width:260px;">
+    <label>Qué necesita el cliente</label>
+    <select onchange="devTipo=this.value; devProductoNuevoId=''; devVarianteNuevaId=''; renderAll();">
+      <option value="devolucion" ${devTipo==='devolucion'?'selected':''}>Devolución con reintegro</option>
+      <option value="cambio" ${devTipo==='cambio'?'selected':''}>Cambio por otro producto o talle</option>
+    </select>
+  </div>
   <div class="row">
     <div class="field" style="max-width:100px;">
       <label>Cantidad</label>
@@ -1221,15 +1361,32 @@ function renderFormDevolucion(ctx){
       <input type="text" placeholder="Ej: talle equivocado, defecto de fábrica..." value="${devMotivo}" oninput="devMotivo=this.value">
     </div>
     <div class="field" style="max-width:200px;">
-      <label>¿Cómo se reintegra?</label>
-      <select onchange="devReintegro=this.value">
-        <option ${devReintegro==='Efectivo'?'selected':''}>Efectivo</option>
-        <option ${devReintegro==='Mercado Pago'?'selected':''}>Mercado Pago</option>
-        <option value="Sin reintegro" ${devReintegro==='Sin reintegro'?'selected':''}>Sin reintegro (cambio por otro producto)</option>
+      <label>Medio para devolver el dinero</label>
+      <select onchange="devReintegro=this.value" ${devTipo==='cambio'?'disabled':''}>
+        ${['Efectivo','Mercado Pago','Débito','Crédito'].map(m=>`<option ${devReintegro===m?'selected':''}>${m}</option>`).join('')}
       </select>
     </div>
   </div>
-  <p class="section-note" style="margin:-4px 0 10px;">Monto a devolver: ${money(ctx.precioUnit*devCantidad)}. Repone ${devCantidad} unidad(es) al stock de "${ctx.nombre}${ctx.varianteLabel?(' - '+ctx.varianteLabel):''}".</p>
+  ${devTipo==='cambio' ? `
+  <div class="row">
+    <div class="field" style="flex:2 1 220px;">
+      <label>Producto que se lleva</label>
+      <select onchange="devProductoNuevoId=this.value; devVarianteNuevaId=''; renderAll();">
+        <option value="">Elegí otro producto o talle</option>
+        ${state.productos.map(p=>`<option value="${p.id}" ${devProductoNuevoId===p.id?'selected':''}>${p.nombre}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field" style="flex:2 1 220px;">
+      <label>Variante nueva</label>
+      <select onchange="devVarianteNuevaId=this.value; renderAll();" ${!productoNuevo?'disabled':''}>
+        <option value="">Elegí talle y color</option>
+        ${productoNuevo ? productoNuevo.variantes.filter(v=>v.stock>0).map(v=>`<option value="${v.id}" ${devVarianteNuevaId===v.id?'selected':''}>${v.talle} ${v.color}${v.codigo?(' ['+v.codigo+']'):''} · stock ${v.stock}</option>`).join('') : ''}
+      </select>
+    </div>
+  </div>
+  ${varianteNueva ? `<p class="section-note"><b>${esCambioDeTalle?'Cambio de talle':'Cambio de producto'}</b><br>Valor devuelto: ${money(precioViejo)} · Valor de lo que se lleva: ${money(precioNuevo)}<br><b>Diferencia: ${money(Math.abs(diferencia))}</b> · ${diferencia>0?'El cliente debe pagarte esa diferencia.':diferencia<0?'Debés devolverle esa diferencia al cliente.':'No se cobra ni se devuelve dinero.'}</p>
+    ${diferencia!==0 ? `<div class="field" style="max-width:250px;"><label>${diferencia>0?'Medio de cobro de la diferencia':'Medio de reintegro de la diferencia'}</label><select onchange="devMetodoDiferencia=this.value">${['Efectivo','Mercado Pago','Débito','Crédito'].map(m=>`<option ${devMetodoDiferencia===m?'selected':''}>${m}</option>`).join('')}</select></div>` : ''}` : ''}
+  ` : `<p class="section-note">Se devuelve ${money(precioViejo)} por ${devCantidad} unidad(es) y se repone esa cantidad al stock.</p>`}
   <button class="btn primary" onclick="confirmarDevolucion()">Registrar devolución</button>
   `;
 }
@@ -1242,24 +1399,50 @@ function confirmarDevolucion(){
   if(!v){ showToast('No se encontró esa variante en el stock actual'); return; }
   const cantidad = Math.max(1, Math.min(devCantidad, ctx.maxCantidad));
   const montoDevuelto = ctx.precioUnit * cantidad;
-
+  let productoNuevo = null;
+  let varianteNueva = null;
+  let montoNuevo = 0;
+  let diferencia = -montoDevuelto;
+  if(devTipo==='cambio'){
+    productoNuevo = state.productos.find(p=>p.id===devProductoNuevoId);
+    varianteNueva = productoNuevo && productoNuevo.variantes.find(v=>v.id===devVarianteNuevaId);
+    if(!varianteNueva){ showToast('Elegí el producto y la variante que se lleva'); return; }
+    if(varianteNueva.stock<cantidad){ showToast('No hay stock suficiente para completar el cambio'); return; }
+    montoNuevo = Number(productoNuevo.precio||0)*cantidad;
+    diferencia = montoNuevo-montoDevuelto;
+    varianteNueva.stock -= cantidad;
+  }
   v.stock += cantidad;
 
   const t = turnoAbierto();
-  if(t && (devReintegro==='Efectivo')){
-    t.gastos.push({desc:'Devolución: '+ctx.nombre+(ctx.varianteLabel?(' ('+ctx.varianteLabel+')'):''), monto:montoDevuelto, hora:timeStr()});
+  const reintegro = devTipo==='devolucion' ? devReintegro : (diferencia<0 ? devMetodoDiferencia : 'Sin reintegro');
+  const metodoDiferencia = diferencia>0 ? devMetodoDiferencia : '';
+  if(t && ((devTipo==='devolucion' && devReintegro==='Efectivo') || (devTipo==='cambio' && diferencia<0 && devMetodoDiferencia==='Efectivo'))){
+    const salida = devTipo==='devolucion' ? montoDevuelto : Math.abs(diferencia);
+    t.gastos = t.gastos || [];
+    t.gastos.push({desc:(devTipo==='cambio'?'Diferencia de cambio':'Devolución')+': '+ctx.nombre, monto:salida, hora:timeStr()});
+  }
+  if(t && devTipo==='cambio' && diferencia>0 && devMetodoDiferencia==='Efectivo'){
+    t.ingresosCambio = t.ingresosCambio || [];
+    t.ingresosCambio.push({desc:'Diferencia de cambio: '+productoNuevo.nombre, monto:diferencia, hora:timeStr()});
   }
 
   state.devoluciones.push({
     id: uid(), fecha: todayStr(), hora: timeStr(),
     ventaId: ctx.ventaId, productoId: ctx.productoId, varianteId: ctx.varianteId,
-    itemIdx: devItemIdx, nombre: ctx.nombre, varianteLabel: ctx.varianteLabel,
-    cantidad, montoDevuelto, motivo: devMotivo.trim(), reintegro: devReintegro,
+    ventaFecha: ctx.ventaId ? (state.ventas.find(venta=>venta.id===ctx.ventaId)?.fecha||'') : '',
+    itemIdx: ctx.ventaId ? Number(devItemIdx) : null, nombre: ctx.nombre, varianteLabel: ctx.varianteLabel, codigo:ctx.codigo||'',
+    cantidad, montoDevuelto, tipo:devTipo, montoNuevo,
+    productoNuevoId:productoNuevo?.id||null, varianteNuevaId:varianteNueva?.id||null,
+    nombreNuevo:productoNuevo?.nombre||'', varianteNuevaLabel:varianteNueva?[varianteNueva.talle,varianteNueva.color].filter(Boolean).join(' / '):'',
+    codigoNuevo:varianteNueva?.codigo||'', montoDiferencia:diferencia,
+    motivo: devMotivo.trim(), reintegro, metodoDiferencia,
     turnoId: t ? t.id : null
   });
   save();
-  showToast('Devolución registrada');
+  showToast(devTipo==='cambio' ? 'Cambio registrado' : 'Devolución y reintegro registrados');
   devVentaId=''; devItemIdx=''; devCantidad=1; devMotivo=''; devReintegro='Efectivo';
+  devTipo='devolucion'; devProductoNuevoId=''; devVarianteNuevaId=''; devMetodoDiferencia='Efectivo';
   devManualProdId=''; devManualVarId='';
   renderAll();
 }
@@ -1318,7 +1501,8 @@ function renderTurno(){
   METODOS.forEach(m=>porMetodo[m]=0);
   ventasTurno.forEach(v=>porMetodo[v.metodoPago]+=v.total);
   const totalGastos = t.gastos.reduce((a,g)=>a+g.monto,0);
-  const efectivoEsperado = Number(t.cambioInicial) + porMetodo['Efectivo'] - totalGastos;
+  const ingresosCambioEfectivo = (t.ingresosCambio||[]).reduce((a,i)=>a+Number(i.monto||0),0);
+  const efectivoEsperado = Number(t.cambioInicial) + porMetodo['Efectivo'] + ingresosCambioEfectivo - totalGastos;
 
   return `
   <h2 class="section-title">Turno ${t.turno}</h2>
@@ -1334,6 +1518,7 @@ function renderTurno(){
       <div class="card-title">Efectivo en caja</div>
       <div class="totalline"><span class="muted">Cambio inicial</span><span class="num">${money(t.cambioInicial)}</span></div>
       <div class="totalline"><span class="muted">+ Ventas efectivo</span><span class="num">${money(porMetodo['Efectivo'])}</span></div>
+      <div class="totalline"><span class="muted">+ Diferencias cobradas en efectivo</span><span class="num">${money(ingresosCambioEfectivo)}</span></div>
       <div class="totalline"><span class="muted">− Gastos</span><span class="num">${money(totalGastos)}</span></div>
       <div class="totalline big"><span>Esperado</span><span class="num">${money(efectivoEsperado)}</span></div>
     </div>
@@ -1436,8 +1621,16 @@ function renderHistorial(){
   const devoluciones = state.devoluciones.filter(d=>d.fecha===historialFecha);
   const comprasReventa = state.compras.filter(c=>c.fecha===historialFecha);
   const turnosDia = state.turnos.filter(t=>t.fecha===historialFecha);
+  const ajusteDevoluciones = devoluciones.reduce((total,d)=>total+ajusteEconomicoDevolucion(d),0);
+  const totalVendidoNeto = ventas.reduce((total,v)=>total+Number(v.total||0),0)+ajusteDevoluciones;
   const porMetodo = {}; METODOS.forEach(m=>porMetodo[m]=0);
   ventas.forEach(v=>porMetodo[v.metodoPago]+=v.total);
+  devoluciones.forEach(d=>{
+    if(esCambioDevolucion(d)){
+      if(d.montoDiferencia>0 && porMetodo[d.metodoDiferencia]!=null) porMetodo[d.metodoDiferencia]+=d.montoDiferencia;
+      if(d.montoDiferencia<0 && porMetodo[d.reintegro]!=null) porMetodo[d.reintegro]+=d.montoDiferencia;
+    }else if(porMetodo[d.reintegro]!=null) porMetodo[d.reintegro]-=Number(d.montoDevuelto||0);
+  });
 
   const ranking = {};
   ventas.forEach(v=>v.items.forEach(i=>{
@@ -1461,11 +1654,17 @@ function renderHistorial(){
   </div>
 
   <div class="top-summary">
-    <div class="stat"><div class="v">${money(ventas.reduce((a,v)=>a+v.total,0))}</div><div class="l">Total vendido</div></div>
+    <div class="stat"><div class="v">${money(totalVendidoNeto)}</div><div class="l">Ventas netas</div></div>
     <div class="stat"><div class="v">${ventas.length}</div><div class="l">Ventas</div></div>
     <div class="stat"><div class="v">${devoluciones.length}</div><div class="l">Devoluciones</div></div>
     <div class="stat"><div class="v">${money(comprasReventa.reduce((a,c)=>a+Number(c.costo||0),0))}</div><div class="l">Compras reventa</div></div>
     ${METODOS.map(m=>`<div class="stat"><div class="v">${money(porMetodo[m])}</div><div class="l">${m}</div></div>`).join('')}
+  </div>
+
+  <div class="card">
+    <div class="card-title">Ventas por día · últimos 7 días</div>
+    <p class="section-note" style="margin-bottom:4px;">Importes netos: ventas menos devoluciones y diferencias de cambios.</p>
+    ${renderGraficoVentasDiarias()}
   </div>
 
   <div class="card">
@@ -1494,13 +1693,14 @@ function renderHistorial(){
   <div class="card">
     <div class="card-title">Devoluciones del día</div>
     ${devoluciones.length===0 ? '<p class="empty">Sin devoluciones registradas ese día.</p>' : `
-    <table><thead><tr><th>Hora</th><th>Producto</th><th>Cant.</th><th>Motivo</th><th>Reintegro</th></tr></thead>
+    <table><thead><tr><th>Hora</th><th>Tipo</th><th>Producto devuelto</th><th>Recibió / diferencia</th><th>Cant.</th><th>Importe</th></tr></thead>
     <tbody>${devoluciones.slice().reverse().map(d=>`<tr>
       <td>${d.hora}</td>
-      <td>${d.nombre}${d.varianteLabel?(' ('+d.varianteLabel+')'):''}</td>
+      <td>${esCambioDevolucion(d)?'Cambio':'Devolución'}</td>
+      <td>${d.nombre}${d.varianteLabel?(' ('+d.varianteLabel+')'):''}${d.motivo?'<br><span class="muted">'+d.motivo+'</span>':''}</td>
+      <td>${esCambioDevolucion(d) ? (d.nombreNuevo ? d.nombreNuevo+(d.varianteNuevaLabel?' ('+d.varianteNuevaLabel+')':'') : 'Cambio sin reintegro')+' · '+(d.montoDiferencia>0?'cobra '+money(d.montoDiferencia):d.montoDiferencia<0?'devuelve '+money(Math.abs(d.montoDiferencia)):'sin diferencia') : 'Reintegro '+d.reintegro}</td>
       <td class="num">${d.cantidad}</td>
-      <td>${d.motivo||'-'}</td>
-      <td class="num">${d.reintegro==='Sin reintegro'?'-':money(d.montoDevuelto)+' ('+d.reintegro+')'}</td>
+      <td class="num" style="color:var(--brick);">-${money(d.montoDevuelto)}</td>
     </tr>`).join('')}</tbody></table>`}
   </div>
 
@@ -1561,24 +1761,34 @@ async function exportarVentasDia(){
   const filasCompras = [];
   comprasReventa.forEach(c=>{
     const lineas = c.lineas && c.lineas.length ? c.lineas : [{nombre:c.descripcion, varianteLabel:'', cantidad:''}];
-    lineas.forEach(l=>filasCompras.push({Fecha:fecha, Descripcion:c.descripcion, Proveedor:c.proveedor||'', Producto:l.nombre||'', Variante:l.varianteLabel||'', Cantidad:l.cantidad, CostoTotal:c.costo, Notas:c.notas||''}));
+    lineas.forEach(l=>filasCompras.push({Fecha:fecha, Lugar:c.lugar||'', Proveedor:c.proveedor||'', Direccion:c.direccion||'', Telefono:c.telefono||'', Descripcion:c.descripcion, Producto:l.nombre||'', Variante:l.varianteLabel||'', Cantidad:l.cantidad, CostoTotal:c.costo, Notas:c.notas||''}));
   });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filasCompras.length ? filasCompras : [{Fecha:fecha,Descripcion:'Sin compras para reventa registradas'}]), 'Compras reventa');
   const devoluciones = state.devoluciones.filter(d=>d.fecha===fecha).map(d=>({
-    Fecha:fecha, Turno:turnosDia.find(t=>t.id===d.turnoId)?.turno||'Sin turno asociado', Hora:d.hora, Producto:d.nombre, Variante:d.varianteLabel||'', Codigo:d.codigo||'', Cantidad:d.cantidad,
-    Motivo:d.motivo||'', Reintegro:d.reintegro, Monto:d.reintegro==='Sin reintegro'?0:d.montoDevuelto
+    Fecha:fecha, Turno:turnosDia.find(t=>t.id===d.turnoId)?.turno||'Sin turno asociado', Hora:d.hora,
+    Tipo:d.tipo==='cambio'?'Cambio':'Devolución', ProductoDevuelto:d.nombre,
+    VarianteDevuelta:d.varianteLabel||'', CodigoDevuelto:d.codigo||'', Cantidad:d.cantidad,
+    ProductoRecibido:d.nombreNuevo||'', VarianteRecibida:d.varianteNuevaLabel||'', CodigoRecibido:d.codigoNuevo||'',
+    ImporteDevuelto:esCambioDevolucion(d)?0:-Number(d.montoDevuelto||0), ImporteProductoRecibido:Number(d.montoNuevo||0),
+    Diferencia:ajusteEconomicoDevolucion(d),
+    MetodoReintegro:d.reintegro||'', MetodoDiferencia:d.metodoDiferencia||'', Motivo:d.motivo||''
   }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(devoluciones.length ? devoluciones : [{Hora:'',Producto:'Sin devoluciones registradas'}]), 'Devoluciones');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(gastos.length ? gastos : [{Hora:'',Descripcion:'Sin gastos registrados'}]), 'Gastos');
 
-  const totalVendido = ventas.reduce((a,v)=>a+Number(v.total||0),0);
-  const totalGastos = gastos.reduce((a,g)=>a+Number(g.Monto||0),0);
+  const totalVendidoBruto = ventas.reduce((a,v)=>a+Number(v.total||0),0);
+  const totalAjustesDevolucion = devoluciones.reduce((a,d)=>a+Number(d.Diferencia||0),0);
+  const totalVendido = totalVendidoBruto+totalAjustesDevolucion;
+  const gastosOperativos = gastos.filter(g=>!/^Devolución:|^Diferencia de cambio:/i.test(g.Descripcion||''));
+  const totalGastos = gastosOperativos.reduce((a,g)=>a+Number(g.Monto||0),0);
   const totalComprasReventa = comprasReventa.reduce((a,c)=>a+Number(c.costo||0),0);
-  const totalDevuelto = devoluciones.reduce((a,d)=>a+Number(d.Monto||0),0);
+  const totalDevuelto = devoluciones.reduce((a,d)=>a+Number(d.ImporteDevuelto||0),0);
   const totalNeto = totalVendido-totalGastos-totalComprasReventa;
   const resumen = [
-    {Concepto:'Total vendido', Cantidad:ventas.length, Monto:totalVendido},
-    {Concepto:'Total gastos y reintegros', Cantidad:gastos.length, Monto:totalGastos},
+    {Concepto:'Ventas brutas', Cantidad:ventas.length, Monto:totalVendidoBruto},
+    {Concepto:'Devoluciones / ajustes (negativo)', Cantidad:devoluciones.length, Monto:totalDevuelto},
+    {Concepto:'Ventas netas con cambios', Cantidad:'', Monto:totalVendido},
+    {Concepto:'Gastos operativos', Cantidad:gastosOperativos.length, Monto:totalGastos},
     {Concepto:'Total compras para reventa', Cantidad:comprasReventa.length, Monto:totalComprasReventa},
     {Concepto:'Total devoluciones', Cantidad:devoluciones.length, Monto:totalDevuelto},
     {Concepto:'Neto del día (ventas - gastos - compras)', Cantidad:'', Monto:totalNeto}
@@ -1588,9 +1798,12 @@ async function exportarVentasDia(){
   const cierre = turnosDia.map(t=>{
     const ventasTurno = ventas.filter(v=>v.turnoId===t.id);
     const gastosTurno = (t.gastos||[]).reduce((a,g)=>a+Number(g.monto||0),0);
+    const ingresosCambioEfectivo = (t.ingresosCambio||[]).reduce((a,i)=>a+Number(i.monto||0),0);
     const efectivo = ventasTurno.filter(v=>v.metodoPago==='Efectivo').reduce((a,v)=>a+Number(v.total||0),0);
-    const esperado = Number(t.cambioInicial||0)+efectivo-gastosTurno;
-    return {Fecha:fecha, Turno:t.turno, Apertura:t.horaApertura, Cierre:t.horaCierre||'Abierto', CambioInicial:Number(t.cambioInicial||0), TotalVendido:ventasTurno.reduce((a,v)=>a+Number(v.total||0),0), EfectivoVendido:efectivo, Gastos:gastosTurno, EfectivoEsperado:esperado, EfectivoContado:t.cambioFinal==null?'':t.cambioFinal, Diferencia:t.cambioFinal==null?'':Number(t.cambioFinal)-esperado};
+    const esperado = Number(t.cambioInicial||0)+efectivo+ingresosCambioEfectivo-gastosTurno;
+    const ajustesTurno = state.devoluciones.filter(d=>d.turnoId===t.id).reduce((a,d)=>a+ajusteEconomicoDevolucion(d),0);
+    const totalVendidoNetoTurno = ventasTurno.reduce((a,v)=>a+Number(v.total||0),0)+ajustesTurno;
+    return {Fecha:fecha, Turno:t.turno, Apertura:t.horaApertura, Cierre:t.horaCierre||'Abierto', CambioInicial:Number(t.cambioInicial||0), TotalVendido:ventasTurno.reduce((a,v)=>a+Number(v.total||0),0), AjustesDevoluciones:ajustesTurno, VentasNetas:totalVendidoNetoTurno, EfectivoVendido:efectivo, DiferenciasCobradasEfectivo:ingresosCambioEfectivo, GastosYReintegros:gastosTurno, EfectivoEsperado:esperado, EfectivoContado:t.cambioFinal==null?'':t.cambioFinal, Diferencia:t.cambioFinal==null?'':Number(t.cambioFinal)-esperado};
   });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cierre.length ? cierre : [{Fecha:fecha,Turno:'Sin turnos registrados'}]), 'Cierre de caja');
   const arrayBuf = XLSX.write(wb, {type:'array', bookType:'xlsx'});
@@ -1599,7 +1812,7 @@ async function exportarVentasDia(){
 }
 
 /* =================== COMPRAS (solo admin) =================== */
-let nuevaCompra = {fecha: todayStr(), descripcion:'', proveedor:'', costo:'', notas:''};
+let nuevaCompra = {fecha: todayStr(), descripcion:'', lugar:'', proveedor:'', direccion:'', telefono:'', costo:'', notas:''};
 let compraLineaProd = '';
 let compraLineaVar = '';
 let compraLineaCant = 1;
@@ -1610,7 +1823,7 @@ let comprasLugarFiltro = '';
 function renderCompras(){
   const prodLinea = state.productos.find(p=>p.id===compraLineaProd);
   const compras = state.compras.slice().reverse();
-  const comprasFiltradas = comprasLugarFiltro.trim() ? compras.filter(c=>(c.proveedor||'').toLowerCase().includes(comprasLugarFiltro.trim().toLowerCase())) : compras;
+  const comprasFiltradas = comprasLugarFiltro.trim() ? compras.filter(c=>[c.lugar,c.proveedor,c.direccion,c.telefono].join(' ').toLowerCase().includes(comprasLugarFiltro.trim().toLowerCase())) : compras;
   return `
   <h2 class="section-title">Compras</h2>
   <p class="section-note">Registrá todo lo que comprás para revender. Al confirmar, cada línea suma automáticamente su cantidad al stock de esa variante.</p>
@@ -1620,7 +1833,10 @@ function renderCompras(){
     <div class="row">
       <div class="field" style="max-width:150px;"><label>Fecha</label><input type="date" value="${nuevaCompra.fecha}" onchange="nuevaCompra.fecha=this.value"></div>
       <div class="field" style="flex:2 1 220px;"><label>Qué compraste</label><input type="text" placeholder="Ej: Remeras blancas angelito" value="${nuevaCompra.descripcion}" oninput="nuevaCompra.descripcion=this.value"></div>
-      <div class="field" style="flex:1 1 220px;"><label>Lugar / proveedor / dirección</label><input type="text" placeholder="Ej: Las Flores · Local 321 · Av. Rivadavia 1231" value="${nuevaCompra.proveedor}" oninput="nuevaCompra.proveedor=this.value"></div>
+      <div class="field" style="flex:1 1 170px;"><label>Lugar</label><input type="text" placeholder="Las Flores" value="${nuevaCompra.lugar}" oninput="nuevaCompra.lugar=this.value"></div>
+      <div class="field" style="flex:1 1 170px;"><label>Proveedor / local</label><input type="text" placeholder="Local 321" value="${nuevaCompra.proveedor}" oninput="nuevaCompra.proveedor=this.value"></div>
+      <div class="field" style="flex:2 1 220px;"><label>Dirección</label><input type="text" placeholder="Av. Rivadavia 1231" value="${nuevaCompra.direccion}" oninput="nuevaCompra.direccion=this.value"></div>
+      <div class="field" style="flex:1 1 150px;"><label>Teléfono</label><input type="tel" placeholder="11 5555 5555" value="${nuevaCompra.telefono}" oninput="nuevaCompra.telefono=this.value"></div>
       <div class="field" style="max-width:130px;"><label>Costo total</label><input type="number" min="0" placeholder="0" value="${nuevaCompra.costo}" oninput="nuevaCompra.costo=this.value"></div>
     </div>
     <div class="field"><label>Notas (opcional)</label><textarea rows="2" placeholder="Detalles extra..." oninput="nuevaCompra.notas=this.value">${nuevaCompra.notas}</textarea></div>
@@ -1641,29 +1857,6 @@ function renderCompras(){
       <div class="field"><label>Costo unitario</label><input type="number" min="0" placeholder="0" value="${compraRapida.costo}" oninput="compraRapida.costo=this.value"></div>
       <div class="field"><label>Precio de venta</label><input type="number" min="0" placeholder="0" value="${compraRapida.precio}" oninput="compraRapida.precio=this.value"></div>
       <div class="field" style="flex:0 0 auto;justify-content:flex-end;"><button class="btn small primary" onclick="agregarCompraRapida()">Agregar variante</button></div>
-    </div>
-
-    <hr class="stitch">
-    <p class="section-note">También podés elegir un producto y variante que ya existan:</p>
-    <div class="row">
-      <div class="field" style="flex:2 1 200px;">
-        <label>Producto</label>
-        <select onchange="compraLineaProd=this.value; compraLineaVar=''; renderAll();">
-          <option value="">Elegí un producto</option>
-          ${state.productos.map(p=>`<option value="${p.id}" ${compraLineaProd===p.id?'selected':''}>${p.nombre}</option>`).join('')}
-        </select>
-      </div>
-      <div class="field" style="flex:1 1 160px;">
-        <label>Variante</label>
-        <select onchange="compraLineaVar=this.value" ${!prodLinea?'disabled':''}>
-          <option value="">Elegí variante</option>
-          ${prodLinea ? prodLinea.variantes.map(v=>`<option value="${v.id}" ${compraLineaVar===v.id?'selected':''}>${v.talle} ${v.color}${v.codigo?(' ['+v.codigo+']'):''}</option>`).join('') : ''}
-        </select>
-      </div>
-      <div class="field" style="max-width:100px;"><label>Cantidad</label><input type="number" min="1" value="${compraLineaCant}" onchange="compraLineaCant=parseInt(this.value)||1;"></div>
-      <div class="field" style="flex:0 0 auto;justify-content:flex-end;">
-        <button class="btn small primary" ${(!compraLineaProd||!compraLineaVar)?'disabled':''} onclick="agregarLineaCompra()">+ Agregar línea</button>
-      </div>
     </div>
 
     ${compraLineas.length ? `
@@ -1691,7 +1884,7 @@ function renderCompras(){
             <button class="link-btn" onclick="eliminarCompra('${c.id}')">eliminar</button>
           </span>
         </div>
-        <div class="muted">${c.proveedor||'-'}${c.notas?(' · '+c.notas):''}</div>
+        <div class="muted">${[c.lugar,c.proveedor,c.direccion,c.telefono].filter(Boolean).join(' · ')||'-'}${c.notas?(' · '+c.notas):''}</div>
         ${lineas.length ? `<div class="muted" style="margin-top:2px;">${lineas.map(l=>l.cantidad+'x '+(l.nombre||'')+(l.varianteLabel?(' ('+l.varianteLabel+')'):'')).join(', ')}</div>` : ''}
       </div>`;
     }).join('')}
@@ -1751,7 +1944,7 @@ function registrarCompra(){
   if(!nuevaCompra.descripcion.trim()){ showToast('Contame qué compraste'); return; }
   state.compras.push({
     id: uid(), fecha: nuevaCompra.fecha, descripcion: nuevaCompra.descripcion.trim(),
-    proveedor: nuevaCompra.proveedor.trim(), costo: Number(nuevaCompra.costo)||0,
+    lugar: nuevaCompra.lugar.trim(), proveedor: nuevaCompra.proveedor.trim(), direccion: nuevaCompra.direccion.trim(), telefono: nuevaCompra.telefono.trim(), costo: Number(nuevaCompra.costo)||0,
     notas: nuevaCompra.notas.trim(), lineas: compraLineas.map(l=>({...l}))
   });
   compraLineas.forEach(l=>{
@@ -1761,7 +1954,7 @@ function registrarCompra(){
   });
   save();
   showToast(compraLineas.length ? 'Compra registrada y stock actualizado' : 'Compra registrada');
-  nuevaCompra = {fecha: todayStr(), descripcion:'', proveedor:'', costo:'', notas:''};
+  nuevaCompra = {fecha: todayStr(), descripcion:'', lugar:'', proveedor:'', direccion:'', telefono:'', costo:'', notas:''};
   compraLineas = [];
   renderAll();
 }
