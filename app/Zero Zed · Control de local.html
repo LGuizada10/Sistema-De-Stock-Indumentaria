@@ -886,7 +886,8 @@ function gananciaPorPrendaDeFecha(fecha){
   const mapa = {}; const sinCosto = new Set();
   ventasDe(fecha).forEach(v=>v.items.forEach(i=>{
     const prod = state.productos.find(p=>p.id===i.productoId);
-    const costo = i.costoUnit!=null ? Number(i.costoUnit) : Number(prod ? prod.costo : 0);
+    const costoVenta = Number(i.costoUnit)||0;
+    const costo = costoVenta>0 ? costoVenta : (Number(prod ? prod.costo : 0)||0);
     if(!(costo>0)){ sinCosto.add(i.nombre); return; }
     const m = mapa[i.nombre] = mapa[i.nombre] || {nombre:i.nombre, cantidad:0, ganancia:0, venta:0};
     m.cantidad += i.cantidad;
@@ -1358,6 +1359,62 @@ let productoEditDraft = null;
 let stockSearch = '', stockClaveConsultada = '';
 let stockCategoryFilter = '';
 
+let costosPendDraft = {};
+let costosPendAbierto = false, costosPendTodos = false;
+function productosSinCosto(){
+  const vendidas = {};
+  state.ventas.forEach(v=>v.items.forEach(i=>{ vendidas[i.productoId] = (vendidas[i.productoId]||0) + Number(i.cantidad||0); }));
+  return state.productos.filter(p=>!(Number(p.costo)>0))
+    .map(p=>({p, vendidas:vendidas[p.id]||0}))
+    .sort((a,b)=>b.vendidas-a.vendidas || a.p.nombre.localeCompare(b.p.nombre,'es'));
+}
+function renderCostosPendientes(){
+  if(session!=='admin') return '';
+  const lista = productosSinCosto();
+  if(!lista.length) return '';
+  const visibles = costosPendTodos ? lista : lista.slice(0,10);
+  const cargados = Object.values(costosPendDraft).filter(v=>Number(v)>0).length;
+  return `
+  <div class="card" style="border-color:var(--warn);">
+    <div class="card-title" style="cursor:pointer;" onclick="costosPendAbierto=!costosPendAbierto; renderAll();">
+      <span>⚠ Costos pendientes · ${lista.length} prenda(s) sin costo</span>
+      <span class="muted" style="font-size:12px;">${costosPendAbierto?'Ocultar':'Ver y cargar'}</span>
+    </div>
+    ${costosPendAbierto ? `
+    <p class="section-note" style="margin-bottom:6px;">Ordenadas por unidades vendidas. El costo vale para todos los talles y colores de la prenda, y se aplica también a las ventas anteriores. Solo visible para el administrador.</p>
+    <table><thead><tr><th>Prenda</th><th>Categoría</th><th>Vendidas</th><th>Costo unitario</th></tr></thead><tbody>
+    ${visibles.map(({p,vendidas})=>`<tr>
+      <td>${escaparHTML(p.nombre)}${p.descripcion?' <span class="muted">('+escaparHTML(p.descripcion)+')</span>':''}</td>
+      <td>${escaparHTML(p.categoria||'')}</td>
+      <td class="num">${vendidas}</td>
+      <td><input type="number" min="0" placeholder="0" style="width:110px;" value="${costosPendDraft[p.id]??''}" oninput="costosPendDraft['${p.id}']=this.value; actualizarBotonCostosPend();"></td>
+    </tr>`).join('')}
+    </tbody></table>
+    <div class="row" style="margin-top:10px;align-items:center;">
+      <button class="btn primary" id="btnGuardarCostosPend" onclick="guardarCostosPendientes()" ${cargados?'':'disabled'}>Guardar costos${cargados?' ('+cargados+')':''}</button>
+      ${lista.length>10 ? `<button class="btn ghost" onclick="costosPendTodos=!costosPendTodos; renderAll();">${costosPendTodos?'Ver solo las 10 más vendidas':'Ver todas ('+lista.length+')'}</button>` : ''}
+    </div>` : ''}
+  </div>`;
+}
+function actualizarBotonCostosPend(){
+  const b = document.getElementById('btnGuardarCostosPend'); if(!b) return;
+  const n = Object.values(costosPendDraft).filter(v=>Number(v)>0).length;
+  b.disabled = !n; b.textContent = 'Guardar costos' + (n?' ('+n+')':'');
+}
+function guardarCostosPendientes(){
+  if(session!=='admin') return;
+  let n = 0;
+  Object.entries(costosPendDraft).forEach(([id,v])=>{
+    const c = Number(v);
+    const prod = state.productos.find(p=>p.id===id);
+    if(prod && c>0){ prod.costo = c; n++; }
+  });
+  costosPendDraft = {};
+  if(n) save();
+  showToast(n ? n+' costo(s) guardado(s)' : 'No había costos para guardar');
+  renderAll();
+}
+
 function renderStock(){
   const categorias = state.config.categorias;
   if(!nuevoProd.categoria) nuevoProd.categoria = categorias[0] || '';
@@ -1377,6 +1434,7 @@ function renderStock(){
   return `
   <h2 class="section-title">Stock</h2>
   <p class="section-note">Tus productos, talles/colores y cantidades disponibles.</p>
+  ${renderCostosPendientes()}
   <div class="row" style="margin-bottom:12px;">
     ${state.etiquetasInicialesImpresas ? '' : `<button class="btn" onclick="imprimirEtiquetasStock('todas')">Imprimir todas (${contarEtiquetasStock()})</button>`}
     <button class="btn primary" onclick="imprimirEtiquetasStock('nuevas')" ${contarEtiquetasPendientes()===0?'disabled':''}>Nuevas Etiquetas (${contarEtiquetasPendientes()})</button>
