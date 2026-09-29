@@ -234,6 +234,8 @@
     white-space:nowrap;
   }
   .cat-scroll-chip.active{background:var(--mustard);color:var(--navy);border-color:var(--mustard-dark);}
+  .cat-wrap{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;}
+  .cat-wrap .cat-scroll-chip{flex:0 0 auto;white-space:nowrap;}
   .sales-chart{display:flex;align-items:flex-end;gap:8px;height:190px;padding:12px 4px 0;border-bottom:2px solid var(--ink);}
   .sales-chart-day{height:100%;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:5px;min-width:34px;}
   .sales-chart-value{font-family:var(--font-mono);font-size:10px;color:var(--ink-soft);white-space:nowrap;}
@@ -629,6 +631,28 @@ async function descargarArchivo(filename, contenido, mime){
 }
 const DEFAULT_CATEGORIAS = ["Pantalones","Jeans","Shorts","Medias","Cadenitas","Pulseras","Bolsos/Riñoneras","Gorras","Otros"];
 const METODOS = ["Efectivo","Mercado Pago","Débito","Crédito"];
+/* Una venta puede pagarse con uno o dos métodos. Ventas viejas: solo metodoPago + total. */
+function pagosDeVenta(v){
+  if(Array.isArray(v.pagos) && v.pagos.length) return v.pagos;
+  return [{metodo:v.metodoPago, monto:Number(v.total)||0}];
+}
+function montoEfectivoDeVenta(v){ return pagosDeVenta(v).filter(p=>p.metodo==='Efectivo').reduce((t,p)=>t+Number(p.monto||0),0); }
+function sumarVentaPorMetodo(porMetodo, v){ pagosDeVenta(v).forEach(p=>{ if(porMetodo[p.metodo]!=null) porMetodo[p.metodo] += Number(p.monto||0); }); }
+function etiquetaPagosDetalle(v){
+  const pg = pagosDeVenta(v);
+  return pg.length>1 ? pg.map(p=>p.metodo+' '+money(p.monto)).join(' + ') : (v.metodoPago||pg[0].metodo);
+}
+
+/* ---------- registro de movimientos (solo lo ve el administrador en Ajustes) ---------- */
+const MAX_MOVIMIENTOS = 2000;
+function registrarMovimiento(accion, detalle, opts){
+  opts = opts || {};
+  if(!Array.isArray(state.movimientos)) state.movimientos = [];
+  state.movimientos.push({id:uid(), fecha:todayStr(), hora:timeStr(), rol:opts.rol || session || 'sistema', accion, detalle:detalle||''});
+  if(state.movimientos.length>MAX_MOVIMIENTOS) state.movimientos.splice(0, state.movimientos.length-MAX_MOVIMIENTOS);
+  if(opts.guardar) save();
+}
+function etiquetaVariante(v){ return [v.talle,v.color].filter(x=>x&&x!=='-').join(' / ') || 'Único'; }
 const LOW_STOCK = 0; // solo se marca en rojo lo agotado (0); sin aviso amarillo de stock bajo
 
 function defaultState(){
@@ -644,6 +668,7 @@ function defaultState(){
     turnos: [],
     compras: [],
     devoluciones: [],
+    movimientos: [],
     etiquetasPendientes: {},
     etiquetasInicialesImpresas: false
   };
@@ -659,6 +684,7 @@ try{
   if(!state.config.categorias) state.config.categorias = DEFAULT_CATEGORIAS.slice();
   if(!state.config.pins) state.config.pins = { admin:"1234", empleado:"0000" };
   if(!state.devoluciones) state.devoluciones = [];
+  if(!Array.isArray(state.movimientos)) state.movimientos = [];
   if(typeof state.etiquetasInicialesImpresas!=='boolean'){
     state.etiquetasInicialesImpresas=!!state.etiquetasPendientes
       && Object.keys(state.etiquetasPendientes).length===0
@@ -734,16 +760,19 @@ function iniciarSesion(){
   const pinCorrecto = state.config.pins[loginRoleSel];
   if(loginPin === pinCorrecto){
     session = loginRoleSel;
+    registrarMovimiento('Inicio de sesión','Ingresó como '+(session==='admin'?'Administrador':'Empleado'),{guardar:true});
     try{ sessionStorage.setItem('zz_session', session); }catch(e){}
     loginRoleSel = null; loginPin=''; loginError='';
     if(session==='empleado' && (currentTab==='compras' || currentTab==='ajustes')) currentTab='vender';
     renderAll();
   }else{
     loginError = 'PIN incorrecto';
+    registrarMovimiento('PIN incorrecto','Intento fallido de ingreso como '+(loginRoleSel==='admin'?'Administrador':'Empleado'),{rol:loginRoleSel,guardar:true});
     renderAll();
   }
 }
 function cerrarSesion(){
+  registrarMovimiento('Cierre de sesión','',{guardar:true});
   session = null;
   try{ sessionStorage.removeItem('zz_session'); }catch(e){}
   currentTab='vender';
@@ -1058,6 +1087,7 @@ function cambiarPin(rol, valor){
   else if(valor===state.config.pins[otro]) error = 'El PIN de admin y el de empleado no pueden ser iguales';
   if(error){ showToast(error); renderAll(); return; }
   state.config.pins[rol] = valor;
+  registrarMovimiento('PIN cambiado','Se cambió el PIN de '+(rol==='admin'?'Administrador':'Empleado'));
   save();
   showToast('PIN actualizado');
   renderAll();
@@ -1142,7 +1172,22 @@ function renderHeader(){
   }
 }
 
+let ultimaVistaRenderizada = '';
+function capturarScrolls(){
+  const m = {};
+  document.querySelectorAll('[data-scrollkey]').forEach(el=>{ m[el.dataset.scrollkey] = el.scrollTop; });
+  return {y: window.scrollY, m};
+}
+function restaurarScrolls(snap){
+  document.querySelectorAll('[data-scrollkey]').forEach(el=>{
+    const v = snap.m[el.dataset.scrollkey];
+    if(v!=null) el.scrollTop = v;
+  });
+  window.scrollTo(0, snap.y);
+}
 function renderAll(){
+  const snapScroll = capturarScrolls();
+  const vistaActual = (session||'')+'|'+currentTab;
   const focusSnapshot = isIOSBrowser() ? getFocusableTarget() : null;
   const appEl = document.getElementById('app');
   const overlay = document.getElementById('receiptOverlay');
@@ -1172,6 +1217,8 @@ function renderAll(){
   else if(currentTab==='ajustes') c.innerHTML = renderAjustes();
   if(session==='admin') c.innerHTML = renderAvisosAdmin() + c.innerHTML;
   afterRenderHooks();
+  if(ultimaVistaRenderizada===vistaActual) restaurarScrolls(snapScroll); else window.scrollTo(0,0);
+  ultimaVistaRenderizada = vistaActual;
   restoreFocusableTarget(focusSnapshot);
   restoreReceiptScroll();
 }
@@ -1220,9 +1267,9 @@ function renderRecibo(ventaId){
       <table>${filasComprobante(v)}</table>
       <hr>
       <div class="rline"><span>Subtotal</span><span>${money(v.subtotal)}</span></div>
-      ${v.recargoPct>0 ? `<div class="rline"><span>Recargo (${v.recargoPct}%)</span><span>${money(v.total-v.subtotal)}</span></div>` : ''}
+      ${(v.total-v.subtotal)>0 ? `<div class="rline"><span>Recargo${v.recargoPct>0?' ('+v.recargoPct+'%)':' tarjeta'}</span><span>${money(v.total-v.subtotal)}</span></div>` : ''}
       <div class="rtotal"><span>TOTAL</span><span>${money(v.total)}</span></div>
-      <div class="rline" style="margin-top:6px;"><span>Método de pago</span><span>${v.metodoPago}</span></div>
+      <div style="margin-top:6px;">${pagosDeVenta(v).length>1 ? pagosDeVenta(v).map(x=>`<div class="rline"><span>Pago en ${x.metodo}</span><span>${money(x.monto)}</span></div>`).join('') : `<div class="rline"><span>Método de pago</span><span>${v.metodoPago}</span></div>`}</div>
       <div class="receipt-foot">¡Gracias por tu compra!</div>
       <div class="receipt-actions no-print">
         <button class="btn primary" onclick="guardarComprobante('${v.id}')">💾 Descargar (PDF)</button>
@@ -1239,7 +1286,7 @@ async function guardarComprobante(ventaId){
   if(typeof window.jspdf === 'undefined'){ showToast('El generador de PDF sigue cargando, probá de nuevo en un segundo'); return; }
   const { jsPDF } = window.jspdf;
   const anchoMM = 72;
-  const altoMM = 48 + v.items.length*10 + (v.recargoPct>0?6:0);
+  const altoMM = 48 + v.items.length*10 + ((v.total-v.subtotal)>0?6:0) + (pagosDeVenta(v).length>1 ? pagosDeVenta(v).length*4.5 : 0);
   const doc = new jsPDF({unit:'mm', format:[anchoMM, altoMM]});
   const cx = anchoMM/2;
   let y = 8;
@@ -1268,13 +1315,19 @@ async function guardarComprobante(ventaId){
   doc.setLineDash([0.8,0.8],0); doc.line(4,y,anchoMM-4,y); y += 5;
   doc.setFontSize(8.5);
   doc.text('Subtotal', 4, y); doc.text(money(v.subtotal), anchoMM-4, y, {align:'right'}); y += 4.5;
-  if(v.recargoPct>0){
-    doc.text('Recargo ('+v.recargoPct+'%)', 4, y); doc.text(money(v.total-v.subtotal), anchoMM-4, y, {align:'right'}); y += 4.5;
+  if((v.total-v.subtotal)>0){
+    doc.text('Recargo'+(v.recargoPct>0?' ('+v.recargoPct+'%)':' tarjeta'), 4, y); doc.text(money(v.total-v.subtotal), anchoMM-4, y, {align:'right'}); y += 4.5;
   }
   doc.setFont('helvetica','bold'); doc.setFontSize(12);
   doc.text('TOTAL', 4, y); doc.text(money(v.total), anchoMM-4, y, {align:'right'}); y += 6;
   doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
-  doc.text('Método de pago', 4, y); doc.text(v.metodoPago, anchoMM-4, y, {align:'right'}); y += 6;
+  const pg = pagosDeVenta(v);
+  if(pg.length>1){
+    pg.forEach(x=>{ doc.text('Pago en '+x.metodo, 4, y); doc.text(money(x.monto), anchoMM-4, y, {align:'right'}); y += 4.5; });
+    y += 1.5;
+  }else{
+    doc.text('Método de pago', 4, y); doc.text(v.metodoPago, anchoMM-4, y, {align:'right'}); y += 6;
+  }
   doc.setFontSize(8); doc.setTextColor(90,100,95);
   doc.text('¡Gracias por tu compra!', cx, y, {align:'center'});
 
@@ -1313,7 +1366,47 @@ function renderLogin(){
 /* =================== VENDER =================== */
 let cart = [];
 let ventaSelCat = '', ventaSelProd = '', ventaSelVar = '', ventaSelQty = 1, ventaMetodo = 'Efectivo', ventaSearch = '', ventaClaveConsultada = '';
+let ventaDividida = false, ventaMetodoB = 'Mercado Pago', ventaMontoA = '';
 
+function porcentajeRecargo(metodo){ return metodo==='Débito' ? state.config.debitoPct : metodo==='Crédito' ? state.config.creditoPct : 0; }
+/* Un método: paga todo con ese método. Dividido: "ventaMontoA" del precio con el método A y el resto con el B.
+   El recargo de tarjeta se aplica solo a la parte que se paga con tarjeta. */
+function calcularPagoVenta(subtotal){
+  if(!ventaDividida){
+    const pct = porcentajeRecargo(ventaMetodo);
+    const recargo = Math.round(subtotal*pct/100);
+    return {ok:subtotal>0, error:'', dividido:false, pct, recargo, total:subtotal+recargo,
+            pagos:[{metodo:ventaMetodo, base:subtotal, monto:subtotal+recargo}]};
+  }
+  const a = Math.round(Number(ventaMontoA)||0);
+  const b = subtotal - a;
+  let error = '';
+  if(!(a>0) || !(b>0)) error = 'Cargá los montos: efectivo + Mercado Pago tienen que sumar el subtotal';
+  else if(ventaMetodo===ventaMetodoB) error = 'Elegí dos métodos distintos';
+  const partes = [{metodo:ventaMetodo, base:Math.max(0,a)},{metodo:ventaMetodoB, base:Math.max(0,b)}];
+  const pagos = partes.map(x=>({metodo:x.metodo, base:x.base, monto:x.base+Math.round(x.base*porcentajeRecargo(x.metodo)/100)}));
+  const recargo = pagos.reduce((t,x)=>t+x.monto-x.base,0);
+  return {ok:!error && subtotal>0, error, dividido:true, pct:0, recargo, total:subtotal+recargo, pagos};
+}
+function subtotalCarrito(){ return cart.reduce((a,i)=>a+i.cantidad*i.precioUnit,0); }
+function renderResumenPago(){
+  const subtotal = subtotalCarrito();
+  const r = calcularPagoVenta(subtotal);
+  let h = `<div class="totalline"><span class="muted">Subtotal</span><span class="num">${money(subtotal)}</span></div>`;
+  if(r.recargo>0) h += `<div class="totalline"><span class="muted">Recargo ${r.dividido?'tarjeta':ventaMetodo+' ('+r.pct+'%)'}</span><span class="num">${money(r.recargo)}</span></div>`;
+  h += `<div class="totalline big"><span>Total</span><span class="num">${money(r.total)}</span></div>`;
+  if(r.dividido){
+    h += r.pagos.map(x=>`<div class="totalline"><span class="muted">A cobrar en ${x.metodo}</span><span class="num">${money(x.monto)}</span></div>`).join('');
+    if(r.error) h += `<p class="section-note" style="color:var(--brick);margin:6px 0 0;">${r.error}</p>`;
+  }
+  return h;
+}
+function actualizarResumenPago(){
+  const el = document.getElementById('resumenPagoVenta');
+  if(el) el.innerHTML = renderResumenPago();
+  const b = document.getElementById('btnConfirmarVenta');
+  if(b) b.disabled = cart.length===0 || !calcularPagoVenta(subtotalCarrito()).ok;
+}
 function renderVender(){
   const t = turnoAbierto();
   if(!t){
@@ -1423,23 +1516,45 @@ function renderVender(){
     </table>`}
 
     <hr class="stitch">
-    <div class="field" style="max-width:240px;">
-      <label>Método de pago</label>
-      <select onchange="ventaMetodo=this.value; renderAll();">
-        ${METODOS.map(m=>`<option value="${m}" ${ventaMetodo===m?'selected':''}>${m}${(m==='Débito'||m==='Crédito') ? ' (+' + (m==='Débito'?state.config.debitoPct:state.config.creditoPct) + '%)' : ''}</option>`).join('')}
-      </select>
+    <label style="font-size:11.5px;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:6px;">Método de pago</label>
+    <div class="cat-wrap" style="margin-bottom:10px;">
+      ${METODOS.map(m=>`<button type="button" class="cat-scroll-chip ${(!ventaDividida && ventaMetodo===m)?'active':''}" onclick="elegirMetodoVenta('${m}')">${m}${(m==='Débito'||m==='Crédito') ? ' (+' + porcentajeRecargo(m) + '%)' : ''}</button>`).join('')}
+      <button type="button" class="cat-scroll-chip ${ventaDividida?'active':''}" onclick="elegirPagoDividido()">Efectivo + Mercado Pago</button>
     </div>
-    <div class="totalline"><span class="muted">Subtotal</span><span class="num">${money(subtotal)}</span></div>
-    ${pct>0 ? `<div class="totalline"><span class="muted">Recargo ${ventaMetodo} (${pct}%)</span><span class="num">${money(recargo)}</span></div>` : ''}
-    <div class="totalline big"><span>Total</span><span class="num">${money(total)}</span></div>
+    ${ventaDividida ? `<div class="row" style="margin-bottom:4px;">
+      <div class="field" style="max-width:220px;">
+        <label>Efectivo</label>
+        <input type="number" id="ventaMontoEfectivo" min="0" inputmode="numeric" placeholder="0" value="${ventaMontoA}" oninput="setMontoEfectivoSplit(this.value)">
+      </div>
+      <div class="field" style="max-width:220px;">
+        <label>Mercado Pago</label>
+        <input type="number" id="ventaMontoMP" min="0" inputmode="numeric" placeholder="0" value="${ventaMontoA===''?'':Math.round(subtotal-(Number(ventaMontoA)||0))}" oninput="setMontoMPSplit(this.value)">
+      </div>
+    </div>
+    <p class="section-note" style="margin:0 0 6px;">Cargá uno de los dos montos y el otro se completa solo con lo que falta.</p>` : ''}
+    <div id="resumenPagoVenta">${renderResumenPago()}</div>
     <div style="margin-top:10px;display:flex;gap:8px;">
-      <button class="btn primary" ${cart.length===0?'disabled':''} onclick="confirmarVenta()">Confirmar venta</button>
+      <button class="btn primary" id="btnConfirmarVenta" ${(cart.length===0 || !calcularPagoVenta(subtotal).ok)?'disabled':''} onclick="confirmarVenta()">Confirmar venta</button>
       <button class="btn ghost" ${cart.length===0?'disabled':''} onclick="cart=[]; renderAll();">Vaciar</button>
     </div>
   </div>
   `;
 }
 
+function elegirMetodoVenta(m){ ventaDividida=false; ventaMontoA=''; ventaMetodo=m; renderAll(); }
+function elegirPagoDividido(){ ventaDividida=true; ventaMetodo='Efectivo'; ventaMetodoB='Mercado Pago'; ventaMontoA=''; renderAll(); }
+function setMontoEfectivoSplit(v){
+  ventaMontoA = v;
+  const mp = document.getElementById('ventaMontoMP');
+  if(mp) mp.value = v==='' ? '' : Math.round(subtotalCarrito()-(Number(v)||0));
+  actualizarResumenPago();
+}
+function setMontoMPSplit(v){
+  ventaMontoA = v==='' ? '' : String(Math.round(subtotalCarrito()-(Number(v)||0)));
+  const ef = document.getElementById('ventaMontoEfectivo');
+  if(ef) ef.value = ventaMontoA;
+  actualizarResumenPago();
+}
 function agregarAlCarrito(){
   const p = state.productos.find(p=>p.id===ventaSelProd);
   if(!p) return;
@@ -1464,10 +1579,11 @@ function quitarDelCarrito(idx){ cart.splice(idx,1); renderAll(); }
 function confirmarVenta(){
   const t = turnoAbierto();
   if(!t || cart.length===0) return;
-  const subtotal = cart.reduce((a,i)=>a+i.cantidad*i.precioUnit,0);
-  const pct = ventaMetodo==='Débito' ? state.config.debitoPct : ventaMetodo==='Crédito' ? state.config.creditoPct : 0;
-  const recargo = Math.round(subtotal*pct/100);
-  const total = subtotal + recargo;
+  const subtotal = subtotalCarrito();
+  const pago = calcularPagoVenta(subtotal);
+  if(!pago.ok){ showToast(pago.error || 'Revisá el pago'); return; }
+  const pct = pago.pct;
+  const total = pago.total;
 
   for(const item of cart){
     const p = state.productos.find(p=>p.id===item.productoId);
@@ -1478,13 +1594,17 @@ function confirmarVenta(){
 
   const nuevaVenta = {
     id: uid(), fecha: todayStr(), hora: timeStr(), turnoId: t.id,
-    items: cart.map(i=>({...i})), metodoPago: ventaMetodo,
+    items: cart.map(i=>({...i})),
+    metodoPago: pago.pagos.map(x=>x.metodo).join(' + '),
+    pagos: pago.pagos.map(x=>({metodo:x.metodo, monto:x.monto})),
     subtotal, recargoPct: pct, total
   };
   state.ventas.push(nuevaVenta);
+  registrarMovimiento('Venta', money(total)+' · '+cart.reduce((a,i)=>a+i.cantidad,0)+' prenda(s) · '+etiquetaPagosDetalle(nuevaVenta));
   save();
   ultimaVentaId = nuevaVenta.id;
   cart = [];
+  ventaDividida = false; ventaMontoA = '';
   showToast('Venta registrada · ' + money(total));
   printVentaId = nuevaVenta.id;
   renderAll();
@@ -1545,14 +1665,14 @@ function actualizarBotonCostosPend(){
 }
 function guardarCostosPendientes(){
   if(session!=='admin') return;
-  let n = 0;
+  let n = 0; const nombresCostos = [];
   Object.entries(costosPendDraft).forEach(([id,v])=>{
     const c = Number(v);
     const prod = state.productos.find(p=>p.id===id);
-    if(prod && c>0){ prod.costo = c; n++; }
+    if(prod && c>0){ prod.costo = c; n++; nombresCostos.push(prod.nombre+' '+money(c)); }
   });
   costosPendDraft = {};
-  if(n) save();
+  if(n){ registrarMovimiento('Costos cargados', n+' prenda(s): '+nombresCostos.slice(0,8).join(', ')+(nombresCostos.length>8?' y '+(nombresCostos.length-8)+' más':'')); save(); }
   showToast(n ? n+' costo(s) guardado(s)' : 'No había costos para guardar');
   renderAll();
 }
@@ -1589,6 +1709,24 @@ function renderAlertasStock(){
   return cardTop;
 }
 
+let catFiltroExpandido = false;
+const LIMITE_CATEGORIAS_VISIBLES = 8;
+function renderFiltroCategorias(categorias){
+  let visibles = categorias;
+  if(!catFiltroExpandido && categorias.length>LIMITE_CATEGORIAS_VISIBLES){
+    visibles = categorias.slice(0,LIMITE_CATEGORIAS_VISIBLES);
+    if(stockCategoryFilter && categorias.includes(stockCategoryFilter) && !visibles.includes(stockCategoryFilter)) visibles = [...visibles, stockCategoryFilter];
+  }
+  const ocultas = categorias.length - visibles.length;
+  return `
+  <div class="muted" style="font-size:11.5px;margin:6px 0 4px;">Filtrar por categoría:</div>
+  <div class="cat-wrap">
+    <button class="cat-scroll-chip ${stockCategoryFilter===''?'active':''}" onclick="stockCategoryFilter=''; renderAll();">Todas</button>
+    ${visibles.map(c=>`<button class="cat-scroll-chip ${stockCategoryFilter===c?'active':''}" onclick="stockCategoryFilter='${c.replace(/'/g,"\\'")}'; renderAll();">${escaparHTML(c)}</button>`).join('')}
+    ${ocultas>0 ? `<button class="cat-scroll-chip" style="border-style:dashed;" onclick="catFiltroExpandido=true; renderAll();">+${ocultas} más</button>` : ''}
+    ${catFiltroExpandido && categorias.length>LIMITE_CATEGORIAS_VISIBLES ? `<button class="cat-scroll-chip" style="border-style:dashed;" onclick="catFiltroExpandido=false; renderAll();">Ver menos</button>` : ''}
+  </div>`;
+}
 function renderStock(){
   const categorias = state.config.categorias;
   if(!nuevoProd.categoria) nuevoProd.categoria = categorias[0] || '';
@@ -1620,11 +1758,7 @@ function renderStock(){
     <input type="text" data-search="stock" placeholder="Ej: REM-SAK o jean..." value="${stockSearch}" aria-label="Buscar por clave o nombre" oninput="actualizarBusqueda('stock', this);" onkeydown="buscarClaveConEnter('stock', event, this);">
   </div>
   <div id="stockClaveResultado">${renderHistorialClave(stockClaveConsultada)}</div>
-  <div class="cat-scroll">
-    <span class="muted" style="font-size:11.5px;align-self:center;flex:0 0 auto;">Filtrar por categoría:</span>
-    <button class="cat-scroll-chip ${stockCategoryFilter===''?'active':''}" onclick="stockCategoryFilter=''; renderAll();">Todas</button>
-    ${categorias.map(c=>`<button class="cat-scroll-chip ${stockCategoryFilter===c?'active':''}" onclick="stockCategoryFilter='${c.replace(/'/g,"\\'")}'; renderAll();">${c}</button>`).join('')}
-  </div>
+  ${renderFiltroCategorias(categorias)}
 
   <button class="btn primary" onclick="showNuevoProducto=!showNuevoProducto; renderAll();">${showNuevoProducto?'Cancelar':'+ Añadir prenda'}</button>
 
@@ -1662,7 +1796,10 @@ function renderStock(){
       <div class="field" style="max-width:110px;"><label>Cantidad</label><input type="number" min="1" value="${nuevaVariante.stock||1}" oninput="nuevaVariante.stock=this.value"></div>
       <div class="field" style="flex:1 1 150px;"><label>Clave base (opcional)</label><input type="text" placeholder="REM-SAK" value="${nuevaVariante.codigo}" oninput="nuevaVariante.codigo=this.value"></div>
     </div>
-    <button class="btn primary" onclick="guardarCargaRapidaStock()">Agregar al stock</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn primary" onclick="guardarCargaRapidaStock()">Agregar al stock</button>
+      <button class="btn ghost" onclick="cancelarNuevoProducto()">Cancelar</button>
+    </div>
   </div>` : ''}
 
   <hr class="stitch">
@@ -1683,9 +1820,9 @@ function renderResultadosStock(productosFiltrados,categorias){
   return `${categorias.map(cat=>{
     const items = itemsLimitados(porCategoria[cat]);
     if(!items.length) return '';
-    return `<div class="cat-heading">${cat}</div><div style="max-height:360px;overflow-y:auto;">${items.map(p=>renderProductoCard(p)).join('')}</div>`;
+    return `<div class="cat-heading">${cat}</div><div data-scrollkey="stockcat:${escaparHTML(cat)}" style="max-height:360px;overflow-y:auto;">${items.map(p=>renderProductoCard(p)).join('')}</div>`;
   }).join('')}
-  ${sinCategoria.length ? `<div class="cat-heading">Sin categoría</div><div style="max-height:360px;overflow-y:auto;">${itemsLimitados(sinCategoria).map(p=>renderProductoCard(p)).join('')}</div>` : ''}
+  ${sinCategoria.length ? `<div class="cat-heading">Sin categoría</div><div data-scrollkey="stockcat:__sin" style="max-height:360px;overflow-y:auto;">${itemsLimitados(sinCategoria).map(p=>renderProductoCard(p)).join('')}</div>` : ''}
   ${state.productos.length===0 ? '<p class="empty">Todavía no cargaste productos.</p>' : ''}
   ${state.productos.length>0 && productosFiltrados.length===0 ? '<p class="empty">No encontramos productos con ese filtro.</p>' : ''}`;
 }
@@ -1799,7 +1936,7 @@ function renderProductoCard(p){
   return `
   <div class="card">
     <div class="card-title">
-      <span>${p.nombre} <span class="muted num" style="font-size:12px;">· ${session === 'admin' ? 'costo '+money(p.costo)+' · ' : ''}venta ${money(p.precio)}</span></span>
+      <span>${p.nombre} <span class="muted num" style="font-size:12px;">· ${session === 'admin' ? 'costo '+money(p.costo)+' · ' : ''}venta ${money(p.precio)}${porcentajeRecargo('Débito')>0 ? ' · débito '+money(Math.round(p.precio*(1+porcentajeRecargo('Débito')/100))) : ''}${porcentajeRecargo('Crédito')>0 ? ' · crédito '+money(Math.round(p.precio*(1+porcentajeRecargo('Crédito')/100))) : ''}</span></span>
       <span style="display:flex;align-items:center;gap:8px;"><span class="pill ${totalStock<=0?'low':totalStock<=LOW_STOCK?'mid':'ok'}">${totalStock} en stock</span><button class="btn small ghost" onclick="iniciarEdicionProducto('${p.id}')">Editar</button></span>
     </div>
     ${p.descripcion ? `<div class="prod-desc">${p.descripcion}</div>` : ''}
@@ -1827,18 +1964,18 @@ function renderProductoCard(p){
     `).join('')}
     <div class="row" style="margin-top:10px;">
       ${addVarianteFormFor===p.id ? `
-        <div class="field" style="flex:1 1 90px;"><label>Talle</label><input type="text" value="${nuevaVariante.talle}" oninput="nuevaVariante.talle=this.value" placeholder="S, M, 40..."></div>
-        <div class="field" style="flex:1 1 90px;"><label>Color</label><input type="text" value="${nuevaVariante.color}" oninput="nuevaVariante.color=this.value" placeholder="Negro..."></div>
-        <div class="field" style="flex:1 1 70px;"><label>Stock</label><input type="number" min="0" value="${nuevaVariante.stock}" oninput="nuevaVariante.stock=this.value"></div>
+        <div class="field" style="flex:1 1 90px;"><label>Talles</label><input type="text" value="${nuevaVariante.talle}" oninput="nuevaVariante.talle=this.value" placeholder="1,2,3 o S,M,L"></div>
+        <div class="field" style="flex:1 1 90px;"><label>Colores</label><input type="text" value="${nuevaVariante.color}" oninput="nuevaVariante.color=this.value" placeholder="Negro, Blanco..."></div>
+        <div class="field" style="flex:1 1 70px;"><label>Cantidad (c/u)</label><input type="number" min="1" value="${nuevaVariante.stock||1}" oninput="nuevaVariante.stock=this.value"></div>
         <div class="field" style="flex:1 1 120px;">
-          <label>Código / palabra clave</label>
+          <label>Clave base (opcional)</label>
           <div style="display:flex;gap:4px;">
             <input type="text" value="${nuevaVariante.codigo}" oninput="nuevaVariante.codigo=this.value" placeholder="Ej: REM-SAK-1">
-            <button class="btn small ghost" title="Generar clave categoría-nombre-color-talle" onclick="nuevaVariante.codigo=sugerirCodigoVariante('${p.nombre.replace(/'/g,"\\'")}', nuevaVariante.talle, nuevaVariante.color, '${p.categoria.replace(/'/g,"\\'")}'); renderAll();">Generar clave</button>
+            <button class="btn small ghost" title="Generar clave categoría-nombre-color-talle" onclick="generarClaveVarianteForm('${p.id}')">Generar clave</button>
           </div>
         </div>
         <div class="field" style="flex:0 0 auto;justify-content:flex-end;">
-          <button class="btn small primary" onclick="guardarVariante('${p.id}')">Agregar</button>
+          <div style="display:flex;gap:6px;"><button class="btn small primary" onclick="guardarVariante('${p.id}')">Agregar</button><button class="btn small ghost" onclick="addVarianteFormFor=null; renderAll();">Cancelar</button></div>
         </div>
       ` : `<button class="btn small ghost" onclick="addVarianteFormFor='${p.id}'; nuevaVariante={talle:'',color:'',stock:'',codigo:''}; renderAll();">+ Talle/color</button>
       <button class="btn small danger" onclick="eliminarProducto('${p.id}')">Eliminar producto</button>`}
@@ -1871,11 +2008,16 @@ function guardarEdicionProducto(id){
   const producto = state.productos.find(p=>p.id===id);
   if(!producto || !productoEditDraft) return;
   if(!productoEditDraft.nombre.trim()){ showToast('El nombre del producto no puede quedar vacío'); return; }
-  producto.nombre = productoEditDraft.nombre.trim();
-  producto.categoria = productoEditDraft.categoria;
-  producto.descripcion = productoEditDraft.descripcion.trim();
-  if(session==='admin') producto.costo = Number(productoEditDraft.costo)||0;
-  producto.precio = Number(productoEditDraft.precio)||0;
+  const nuevo = {nombre:productoEditDraft.nombre.trim(), categoria:productoEditDraft.categoria, descripcion:productoEditDraft.descripcion.trim(),
+    costo: session==='admin' ? (Number(productoEditDraft.costo)||0) : producto.costo, precio:Number(productoEditDraft.precio)||0};
+  const cambios = [];
+  if(producto.nombre!==nuevo.nombre) cambios.push('nombre "'+producto.nombre+'" → "'+nuevo.nombre+'"');
+  if((producto.categoria||'')!==(nuevo.categoria||'')) cambios.push('categoría "'+(producto.categoria||'-')+'" → "'+(nuevo.categoria||'-')+'"');
+  if((producto.descripcion||'')!==nuevo.descripcion) cambios.push('descripción "'+(producto.descripcion||'')+'" → "'+nuevo.descripcion+'"');
+  if(Number(producto.costo||0)!==nuevo.costo) cambios.push('costo '+money(producto.costo)+' → '+money(nuevo.costo));
+  if(Number(producto.precio||0)!==nuevo.precio) cambios.push('precio '+money(producto.precio)+' → '+money(nuevo.precio));
+  if(cambios.length) registrarMovimiento('Producto editado', nuevo.nombre+': '+cambios.join('; '));
+  Object.assign(producto, nuevo);
   save();
   productoEditandoId = null; productoEditDraft = null;
   showToast('Producto actualizado');
@@ -1885,6 +2027,7 @@ function cancelarEdicionProducto(){ productoEditandoId = null; productoEditDraft
 
 function crearProducto(){
   if(!nuevoProd.nombre.trim()){ showToast('Ponele un nombre al producto'); return; }
+  const nuevoProdNombreLog = nuevoProd.nombre.trim()+' · precio '+money(Number(nuevoProd.precio)||0);
   state.productos.push({
     id: uid(), nombre: nuevoProd.nombre.trim(), descripcion: nuevoProd.descripcion.trim(),
     categoria: nuevoProd.categoria, costo: session==='admin' ? (Number(nuevoProd.costo)||0) : 0, precio: Number(nuevoProd.precio)||0, variantes: []
@@ -1892,7 +2035,14 @@ function crearProducto(){
   save();
   nuevoProd = {nombre:'', descripcion:'', categoria: state.config.categorias[0]||'', costo:'', precio:''};
   showNuevoProducto = false;
+  registrarMovimiento('Producto creado', nuevoProdNombreLog, {guardar:true});
   showToast('Producto creado');
+  renderAll();
+}
+function cancelarNuevoProducto(){
+  nuevoProd = {nombre:'', descripcion:'', categoria: state.config.categorias[0]||'', costo:'', precio:''};
+  nuevaVariante = {talle:'', color:'', stock:'', codigo:''};
+  showNuevoProducto = false;
   renderAll();
 }
 function guardarCargaRapidaStock(){
@@ -1929,6 +2079,7 @@ function guardarCargaRapidaStock(){
   nuevoProd={nombre:'',descripcion:'',categoria:state.config.categorias[0]||'',costo:'',precio:''};
   nuevaVariante={talle:'',color:'',stock:'',codigo:''};
   showNuevoProducto=false;
+  registrarMovimiento('Stock cargado', producto.nombre+': +'+cantidad+' c/u en '+agregadas+' variante(s)', {guardar:true});
   showToast(agregadas+' variante(s) agregada(s) al stock');
   renderAll();
 }
@@ -1936,24 +2087,65 @@ function eliminarProducto(id){
   if(!confirm('¿Eliminar este producto y todas sus variantes?')) return;
   const producto=state.productos.find(p=>p.id===id);
   producto?.variantes.forEach(variante=>delete state.etiquetasPendientes[variante.id]);
+  registrarMovimiento('Producto eliminado', producto ? producto.nombre+' ('+producto.variantes.length+' variante(s), '+producto.variantes.reduce((t,v)=>t+Number(v.stock||0),0)+' u. en stock)' : String(id));
   state.productos = state.productos.filter(p=>p.id!==id);
   save(); renderAll();
 }
+function dividirLista(txt){ return (txt||'').split(/[,;]+/).map(x=>x.trim()).filter(Boolean); }
+function generarClaveVarianteForm(prodId){
+  const p = state.productos.find(p=>p.id===prodId);
+  if(!p) return;
+  const talles = dividirLista(nuevaVariante.talle), colores = dividirLista(nuevaVariante.color);
+  if(talles.length>1 || colores.length>1){ showToast('Con varios talles/colores la clave se genera sola para cada uno'); return; }
+  nuevaVariante.codigo = sugerirCodigoVariante(p.nombre, talles[0]||'Único', colores[0]||'', p.categoria);
+  renderAll();
+}
+/* Acepta varios talles y/o colores separados por coma: crea una variante por cada combinación. */
 function guardarVariante(prodId){
   const p = state.productos.find(p=>p.id===prodId);
   if(!p) return;
-  const talle = nuevaVariante.talle.trim()||'Único';
-  const color = nuevaVariante.color.trim();
-  const variante={id:uid(), talle, color, codigo:(nuevaVariante.codigo||sugerirCodigoVariante(p.nombre,talle,color,p.categoria)).trim().toUpperCase(), stock:Number(nuevaVariante.stock)||0};
-  p.variantes.push(variante);
-  registrarEtiquetasPendientes(variante.id,variante.stock);
+  const tallesLista = dividirLista(nuevaVariante.talle);
+  const talles = tallesLista.length ? tallesLista : ['Único'];
+  const colores = dividirLista(nuevaVariante.color);
+  const coloresFinales = colores.length ? colores : [''];
+  const cantidad = Math.max(1, Math.floor(Number(nuevaVariante.stock))||1);
+  const codigoBase = (nuevaVariante.codigo||'').trim().toUpperCase();
+  const combinaciones = talles.length*coloresFinales.length;
+  let nuevas = 0, sumadas = 0;
+  talles.forEach(talle=>coloresFinales.forEach(color=>{
+    const tienePlantilla = codigoBase.includes('{TALLE}') || codigoBase.includes('{COLOR}');
+    let codigo;
+    if(!codigoBase) codigo = sugerirCodigoVariante(p.nombre,talle,color,p.categoria).trim().toUpperCase();
+    else if(tienePlantilla) codigo = codigoBase.replace('{TALLE}',talle.toUpperCase()).replace('{COLOR}',color.toUpperCase());
+    else if(combinaciones===1) codigo = codigoBase;
+    else codigo = codigoBase+'-'+talle.toUpperCase()+(color?'-'+color.toUpperCase():'');
+    const existente = p.variantes.find(v=>(v.codigo && v.codigo===codigo) || ((v.talle||'').toLowerCase()===talle.toLowerCase() && (v.color||'').toLowerCase()===color.toLowerCase()));
+    if(existente){
+      existente.stock += cantidad;
+      registrarEtiquetasPendientes(existente.id,cantidad);
+      registrarMovimiento('Stock agregado', p.nombre+' ('+etiquetaVariante(existente)+'): +'+cantidad+' → '+existente.stock);
+      sumadas++;
+    }else{
+      const variante={id:uid(), talle, color, codigo, stock:cantidad};
+      p.variantes.push(variante);
+      registrarEtiquetasPendientes(variante.id,variante.stock);
+      registrarMovimiento('Variante agregada', p.nombre+' ('+etiquetaVariante(variante)+') · stock '+variante.stock);
+      nuevas++;
+    }
+  }));
   save();
   addVarianteFormFor = null;
+  nuevaVariante = {talle:'', color:'', stock:'', codigo:''};
+  if(combinaciones===1 && sumadas===1) showToast('Ya existía ese talle/color: se sumaron '+cantidad);
+  else if(combinaciones===1) showToast('Agregado: '+cantidad+' prenda(s)');
+  else showToast(nuevas+' variante(s) nueva(s)'+(sumadas?' · '+sumadas+' ya existían y se les sumó stock':'')+' · '+cantidad+' c/u');
   renderAll();
 }
 function eliminarVariante(prodId,varId){
   const p = state.productos.find(p=>p.id===prodId);
   if(!p) return;
+  const vEliminada = p.variantes.find(v=>v.id===varId);
+  if(vEliminada) registrarMovimiento('Variante eliminada', p.nombre+' ('+etiquetaVariante(vEliminada)+') · tenía '+vEliminada.stock+' u.');
   delete state.etiquetasPendientes[varId];
   p.variantes = p.variantes.filter(v=>v.id!==varId);
   save(); renderAll();
@@ -1963,7 +2155,9 @@ function ajustarStock(prodId,varId,delta){
   const v = p.variantes.find(v=>v.id===varId);
   if(delta>0) registrarEtiquetasPendientes(v.id,delta);
   else retirarEtiquetasPendientes(v.id,Math.abs(delta));
+  const stockAnterior = v.stock;
   v.stock = Math.max(0, v.stock+delta);
+  registrarMovimiento('Stock ajustado', p.nombre+' ('+etiquetaVariante(v)+'): '+stockAnterior+' → '+v.stock);
   save(); renderAll();
 }
 
@@ -2397,6 +2591,7 @@ function confirmarDevolucion(){
     turnoId: t ? t.id : null
   });
   save();
+  registrarMovimiento(devTipo==='cambio'?'Cambio':'Devolución', ctx.nombre+' ×'+cantidad+' · '+money(montoDevuelto)+(devTipo==='cambio' ? ' · diferencia '+money(diferencia) : ' · reintegro '+reintegro), {guardar:true});
   showToast(devTipo==='cambio' ? 'Cambio registrado' : 'Devolución y reintegro registrados');
   devVentaId=''; devItemIdx=''; devCantidad=1; devMotivo=''; devReintegro='Efectivo';
   devTipo='devolucion'; devCambioProdId=''; devCambioVarId=''; devCambioSearch=''; devCambioCantidad=1; devCambioLineas=[]; devMetodoDiferencia='Efectivo';
@@ -2428,6 +2623,7 @@ function eliminarDevolucion(id){
       });
     }
   }
+  registrarMovimiento('Devolución eliminada', d.nombre+' ×'+d.cantidad+' · '+money(d.montoDevuelto)+' (del '+fmtDate(d.fecha)+')');
   state.devoluciones = state.devoluciones.filter(x=>x.id!==id);
   save();
   showToast('Devolución eliminada');
@@ -2472,10 +2668,10 @@ function renderTurno(){
   const devolucionesTurno = state.devoluciones.filter(d=>d.turnoId===t.id);
   const porMetodo = {};
   METODOS.forEach(m=>porMetodo[m]=0);
-  ventasTurno.forEach(v=>porMetodo[v.metodoPago]+=v.total);
+  ventasTurno.forEach(v=>sumarVentaPorMetodo(porMetodo,v));
   devolucionesTurno.forEach(d=>aplicarAjusteDevolucionPorMetodo(porMetodo,d));
   const ajustesDevoluciones = devolucionesTurno.reduce((total,d)=>total+ajusteEconomicoDevolucion(d),0);
-  const efectivoVentas = ventasTurno.filter(v=>v.metodoPago==='Efectivo').reduce((total,v)=>total+Number(v.total||0),0);
+  const efectivoVentas = ventasTurno.reduce((total,v)=>total+montoEfectivoDeVenta(v),0);
   const totalGastos = t.gastos.reduce((a,g)=>a+g.monto,0);
   const ingresosCambioEfectivo = (t.ingresosCambio||[]).reduce((a,i)=>a+Number(i.monto||0),0);
   const efectivoEsperado = Number(t.cambioInicial) + efectivoVentas + ingresosCambioEfectivo - totalGastos;
@@ -2559,6 +2755,7 @@ function abrirTurno(){
     cambioInicial: Number(nuevoTurno.cambioInicial)||0, cambioFinal:null,
     gastos: [], abierto:true, horaApertura: timeStr(), horaCierre:null, efectivoEsperado:null
   });
+  registrarMovimiento('Turno abierto', nuevoTurno.turno+' · cambio inicial '+money(Number(nuevoTurno.cambioInicial)||0));
   save();
   nuevoTurno = {turno: sugerirTurno(), cambioInicial:''};
   showToast('Turno abierto');
@@ -2568,6 +2765,7 @@ function agregarGasto(turnoId){
   if(!nuevoGasto.desc.trim() || !nuevoGasto.monto){ showToast('Completá descripción y monto'); return; }
   const t = state.turnos.find(t=>t.id===turnoId);
   t.gastos.push({desc:nuevoGasto.desc.trim(), monto:Number(nuevoGasto.monto)||0, hora:timeStr()});
+  registrarMovimiento('Gasto agregado', nuevoGasto.desc.trim()+' · '+money(Number(nuevoGasto.monto)||0));
   save();
   nuevoGasto = {desc:'', monto:''};
   renderAll();
@@ -2575,6 +2773,7 @@ function agregarGasto(turnoId){
 function quitarGasto(turnoId, idx){
   if(session!=='admin') return;
   const t = state.turnos.find(t=>t.id===turnoId);
+  if(t.gastos[idx]) registrarMovimiento('Gasto quitado', t.gastos[idx].desc+' · '+money(t.gastos[idx].monto));
   t.gastos.splice(idx,1);
   save(); renderAll();
 }
@@ -2584,6 +2783,7 @@ function cerrarTurno(turnoId, esperado){
   t.cambioFinal = Number(cambioFinalInput)||0;
   t.efectivoEsperado = esperado;
   t.horaCierre = timeStr();
+  registrarMovimiento('Turno cerrado', t.turno+' · contado '+money(t.cambioFinal)+' · esperado '+money(esperado)+' · diferencia '+money(t.cambioFinal-esperado));
   save();
   cerrandoTurno = false; cambioFinalInput='';
   showToast('Turno cerrado');
@@ -2601,7 +2801,7 @@ function renderHistorial(){
   const ajusteDevoluciones = devoluciones.reduce((total,d)=>total+ajusteEconomicoDevolucion(d),0);
   const totalVendidoNeto = ventas.reduce((total,v)=>total+Number(v.total||0),0)+ajusteDevoluciones;
   const porMetodo = {}; METODOS.forEach(m=>porMetodo[m]=0);
-  ventas.forEach(v=>porMetodo[v.metodoPago]+=v.total);
+  ventas.forEach(v=>sumarVentaPorMetodo(porMetodo,v));
   devoluciones.forEach(d=>aplicarAjusteDevolucionPorMetodo(porMetodo,d));
 
   const ranking = {};
@@ -2653,7 +2853,7 @@ function renderHistorial(){
     ${ventas.length===0 ? '<p class="empty">Sin ventas registradas.</p>' : ventas.slice().reverse().map(v=>`
       <div style="padding:8px 0;border-bottom:1px dashed var(--line-soft);font-size:13.5px;">
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
-          <b>${v.hora} · ${v.metodoPago}</b>
+          <b>${v.hora} · ${etiquetaPagosDetalle(v)}</b>
           <span style="display:flex;align-items:center;gap:10px;">
             <span class="num">${money(v.total)}</span>
             <button class="link-btn" style="color:var(--mustard);" onclick="verComprobante('${v.id}')">comprobante</button>
@@ -2732,7 +2932,7 @@ async function exportarVentasDia(){
     const variante = datosVariante(i);
     filasVentas.push({
       Fecha:fecha, Turno:nombreTurno(v), Hora:v.hora, VentaId:v.id,
-      Metodo:v.metodoPago, Producto:i.nombre, Codigo:variante.codigo,
+      Metodo:v.metodoPago, Pagos:etiquetaPagosDetalle(v), Producto:i.nombre, Codigo:variante.codigo,
       Talle:variante.talle, Color:variante.color, Cantidad:i.cantidad,
       PrecioUnit:i.precioUnit, Subtotal:i.cantidad*i.precioUnit
     });
@@ -2784,7 +2984,7 @@ async function exportarVentasDia(){
     const ventasTurno = ventas.filter(v=>v.turnoId===t.id);
     const gastosTurno = (t.gastos||[]).reduce((a,g)=>a+Number(g.monto||0),0);
     const ingresosCambioEfectivo = (t.ingresosCambio||[]).reduce((a,i)=>a+Number(i.monto||0),0);
-    const efectivo = ventasTurno.filter(v=>v.metodoPago==='Efectivo').reduce((a,v)=>a+Number(v.total||0),0);
+    const efectivo = ventasTurno.reduce((a,v)=>a+montoEfectivoDeVenta(v),0);
     const esperado = Number(t.cambioInicial||0)+efectivo+ingresosCambioEfectivo-gastosTurno;
     const ajustesTurno = state.devoluciones.filter(d=>d.turnoId===t.id).reduce((a,d)=>a+ajusteEconomicoDevolucion(d),0);
     const totalVendidoNetoTurno = ventasTurno.reduce((a,v)=>a+Number(v.total||0),0)+ajustesTurno;
@@ -2938,6 +3138,7 @@ function registrarCompra(){
     if(v){v.stock += l.cantidad;registrarEtiquetasPendientes(v.id,l.cantidad);}
   });
   save();
+  registrarMovimiento('Compra registrada', nuevaCompra.descripcion.trim()+' · '+money(Number(nuevaCompra.costo)||0)+(compraLineas.length ? ' · +'+compraLineas.reduce((a,l)=>a+l.cantidad,0)+' u. al stock' : ''), {guardar:true});
   showToast(compraLineas.length ? 'Compra registrada y stock actualizado' : 'Compra registrada');
   nuevaCompra = {fecha: todayStr(), descripcion:'', lugar:'', proveedor:'', direccion:'', telefono:'', costo:'', notas:''};
   compraLineas = [];
@@ -2955,6 +3156,7 @@ function eliminarCompra(id){
       if(v){retirarEtiquetasPendientes(v.id,l.cantidad);v.stock = Math.max(0, v.stock - l.cantidad);}
     });
   }
+  registrarMovimiento('Compra eliminada', c.descripcion+' · '+money(c.costo));
   state.compras = state.compras.filter(x=>x.id!==id);
   save();
   showToast('Compra eliminada');
@@ -2964,6 +3166,67 @@ function eliminarCompra(id){
 /* =================== AJUSTES (solo admin) =================== */
 let nuevaCategoria = '';
 
+let movAbierto = false, movFiltro = 'todos', movCantidad = 100;
+function cambiarRecargo(tipo, valor){
+  const clave = tipo==='debito' ? 'debitoPct' : 'creditoPct';
+  const antes = state.config[clave], nuevo = Number(valor)||0;
+  state.config[clave] = nuevo;
+  if(antes!==nuevo) registrarMovimiento('Recargo modificado', (tipo==='debito'?'Débito':'Crédito')+': '+antes+'% → '+nuevo+'%');
+  save(); renderAll();
+}
+function cambiarNombreLocal(valor){
+  const antes = state.config.nombreLocal;
+  state.config.nombreLocal = valor;
+  if(antes!==valor) registrarMovimiento('Nombre del local', '"'+antes+'" → "'+valor+'"');
+  save(); renderAll();
+}
+function vaciarRegistroMovimientos(){
+  if(session!=='admin') return;
+  if(!confirm('¿Vaciar todo el registro de movimientos? No se puede deshacer.')) return;
+  state.movimientos = [];
+  registrarMovimiento('Registro vaciado','El administrador vació el registro de movimientos',{guardar:true});
+  renderAll();
+}
+function renderRegistroMovimientos(){
+  if(session!=='admin') return '';
+  const todos = (state.movimientos||[]).slice().reverse();
+  const lista = movFiltro==='todos' ? todos : todos.filter(m=>m.rol===movFiltro);
+  const visibles = lista.slice(0,movCantidad);
+  const rolTxt = r => r==='admin' ? 'Admin' : r==='empleado' ? 'Empleado' : 'Sistema';
+  return `
+  <div class="card">
+    <div class="card-title" style="cursor:pointer;" onclick="movAbierto=!movAbierto; renderAll();">
+      <span>Registro de movimientos · ${todos.length}</span>
+      <span class="muted" style="font-size:12px;">${movAbierto?'Ocultar':'Ver'}</span>
+    </div>
+    ${movAbierto ? `
+    <p class="section-note" style="margin-top:-4px;">Solo lo ve el administrador. Muestra quién hizo cada cambio y cuándo. Se guardan los últimos ${MAX_MOVIMIENTOS} movimientos.</p>
+    <div class="row" style="align-items:flex-end;margin-bottom:8px;">
+      <div class="field" style="max-width:200px;">
+        <label>Mostrar</label>
+        <select onchange="movFiltro=this.value; movCantidad=100; renderAll();">
+          <option value="todos" ${movFiltro==='todos'?'selected':''}>Todos</option>
+          <option value="empleado" ${movFiltro==='empleado'?'selected':''}>Solo empleado</option>
+          <option value="admin" ${movFiltro==='admin'?'selected':''}>Solo admin</option>
+        </select>
+      </div>
+      <div class="field" style="flex:0 0 auto;"><button class="btn small ghost" onclick="vaciarRegistroMovimientos()">Vaciar registro</button></div>
+    </div>
+    ${visibles.length===0 ? '<p class="empty">Todavía no hay movimientos.</p>' : `
+    <div data-scrollkey="movimientos" style="overflow-x:auto;max-height:420px;overflow-y:auto;">
+      <table><thead><tr><th>Cuándo</th><th>Quién</th><th>Qué</th><th>Detalle</th></tr></thead><tbody>
+      ${visibles.map(m=>`<tr>
+        <td class="num" style="white-space:nowrap;">${fmtDate(m.fecha)} ${m.hora}</td>
+        <td><span class="pill ${m.rol==='empleado'?'mid':'ok'}">${rolTxt(m.rol)}</span></td>
+        <td style="white-space:nowrap;">${escaparHTML(m.accion)}</td>
+        <td>${escaparHTML(m.detalle)}</td>
+      </tr>`).join('')}
+      </tbody></table>
+    </div>
+    ${lista.length>visibles.length ? `<div style="margin-top:8px;"><button class="btn small ghost" onclick="movCantidad+=100; renderAll();">Ver más (${lista.length-visibles.length} restantes)</button></div>` : ''}`}` : ''}
+  </div>`;
+}
+
 function renderAjustes(){
   return `
   <h2 class="section-title">Ajustes</h2>
@@ -2972,7 +3235,7 @@ function renderAjustes(){
     <div class="card-title">Datos del local</div>
     <div class="field" style="max-width:280px;">
       <label>Nombre del local</label>
-      <input type="text" value="${state.config.nombreLocal}" onchange="state.config.nombreLocal=this.value; save(); renderAll();">
+      <input type="text" value="${state.config.nombreLocal}" onchange="cambiarNombreLocal(this.value)">
     </div>
   </div>
 
@@ -2993,11 +3256,11 @@ function renderAjustes(){
     <div class="row">
       <div class="field" style="max-width:160px;">
         <label>Recargo Débito (%)</label>
-        <input type="number" min="0" value="${state.config.debitoPct}" onchange="state.config.debitoPct=Number(this.value)||0; save(); renderAll();">
+        <input type="number" min="0" value="${state.config.debitoPct}" onchange="cambiarRecargo('debito',this.value)">
       </div>
       <div class="field" style="max-width:160px;">
         <label>Recargo Crédito (%)</label>
-        <input type="number" min="0" value="${state.config.creditoPct}" onchange="state.config.creditoPct=Number(this.value)||0; save(); renderAll();">
+        <input type="number" min="0" value="${state.config.creditoPct}" onchange="cambiarRecargo('credito',this.value)">
       </div>
     </div>
   </div>
@@ -3028,6 +3291,8 @@ function renderAjustes(){
     </div>
   </div>
 
+  ${renderRegistroMovimientos()}
+
   <div class="card">
     <div class="card-title">Planilla de stock</div>
     <p class="section-note" style="margin-top:-4px;">Descargá el stock como Excel o cargá una planilla para crear productos y actualizar cantidades.</p>
@@ -3050,6 +3315,7 @@ function agregarCategoria(){
   if(!val) return;
   if(state.config.categorias.some(c=>c.toLowerCase()===val.toLowerCase())){ showToast('Esa categoría ya existe'); return; }
   state.config.categorias.push(val);
+  registrarMovimiento('Categoría agregada', val);
   save();
   nuevaCategoria = '';
   renderAll();
@@ -3058,6 +3324,7 @@ function eliminarCategoria(cat){
   const enUso = state.productos.some(p=>p.categoria===cat);
   const msg = enUso ? 'Hay productos cargados en esta categoría; van a quedar sin categoría asignada. ¿Eliminar igual?' : '¿Eliminar esta categoría?';
   if(!confirm(msg)) return;
+  registrarMovimiento('Categoría eliminada', cat);
   state.config.categorias = state.config.categorias.filter(c=>c!==cat);
   save();
   renderAll();
@@ -3066,6 +3333,7 @@ function eliminarCategoria(cat){
 function exportarDatos(){
   state.config.ultimoRespaldo = todayStr();
   delete state.config.respaldoPospuestoHasta;
+  registrarMovimiento('Copia de seguridad','Se descargó una copia de seguridad');
   save();
   const contenido = JSON.stringify(state,null,2);
   descargarArchivo('zero-zed-backup-'+todayStr()+'.json', contenido, 'application/json');
@@ -3145,6 +3413,7 @@ function importarStockExcel(event){
         actualizadas++;
       });
       if(!actualizadas) throw new Error('sin productos válidos');
+      registrarMovimiento('Stock importado (Excel)', actualizadas+' fila(s), '+creadas+' producto(s) nuevo(s)');
       save();
       showToast('Stock importado: '+actualizadas+' fila(s), '+creadas+' producto(s) nuevo(s)');
       renderAll();
@@ -3169,7 +3438,9 @@ function importarDatos(event){
           && data.productos.some(producto=>producto.variantes.some(variante=>Number(variante.stock)>0));
       }
       if(!data.etiquetasPendientes || typeof data.etiquetasPendientes!=='object') data.etiquetasPendientes = {};
+      if(!Array.isArray(data.movimientos)) data.movimientos = [];
       state = data;
+      registrarMovimiento('Copia importada','Se restauraron los datos desde un archivo de copia');
       save();
       showToast('Datos importados');
       renderAll();
@@ -3182,7 +3453,10 @@ function importarDatos(event){
 function borrarTodo(){
   if(!confirm('Esto borra todo: productos, ventas, turnos y compras. ¿Seguro?')) return;
   if(!confirm('Última confirmación: no se puede deshacer. ¿Borrar todo?')) return;
+  const movimientosPrevios = state.movimientos || [];
   state = defaultState();
+  state.movimientos = movimientosPrevios;
+  registrarMovimiento('Datos borrados','Se borraron todos los datos del sistema');
   save();
   showToast('Datos borrados');
   renderAll();
