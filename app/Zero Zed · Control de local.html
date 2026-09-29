@@ -629,7 +629,7 @@ async function descargarArchivo(filename, contenido, mime){
 }
 const DEFAULT_CATEGORIAS = ["Pantalones","Jeans","Shorts","Medias","Cadenitas","Pulseras","Bolsos/Riñoneras","Gorras","Otros"];
 const METODOS = ["Efectivo","Mercado Pago","Débito","Crédito"];
-const LOW_STOCK = 3;
+const LOW_STOCK = 0; // solo se marca en rojo lo agotado (0); sin aviso amarillo de stock bajo
 
 function defaultState(){
   return {
@@ -736,7 +736,7 @@ function iniciarSesion(){
     session = loginRoleSel;
     try{ sessionStorage.setItem('zz_session', session); }catch(e){}
     loginRoleSel = null; loginPin=''; loginError='';
-    if(session==='empleado' && (currentTab==='compras' || currentTab==='ajustes' || currentTab==='turno')) currentTab='vender';
+    if(session==='empleado' && (currentTab==='compras' || currentTab==='ajustes')) currentTab='vender';
     renderAll();
   }else{
     loginError = 'PIN incorrecto';
@@ -755,10 +755,18 @@ const MAX_SEARCH_ITEMS = 10;
 const MAX_SEARCH_ROWS = 10;
 function uid(){ return 'id'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 function money(n){ n = Number(n)||0; return '$' + n.toLocaleString('es-AR',{minimumFractionDigits:0, maximumFractionDigits:0}); }
-function todayStr(){ const d=new Date(); return d.toISOString().slice(0,10); }
-function timeStr(){ const d=new Date(); return d.toTimeString().slice(0,5); }
+function fechaLocalStr(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+const ZONA_HORARIA = 'America/Argentina/Buenos_Aires';
+function partesAhora(){
+  const o = {};
+  new Intl.DateTimeFormat('en-CA',{timeZone:ZONA_HORARIA,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'})
+    .formatToParts(new Date()).forEach(p=>{ o[p.type]=p.value; });
+  return o;
+}
+function todayStr(){ const o=partesAhora(); return o.year+'-'+o.month+'-'+o.day; } // siempre fecha de Buenos Aires
+function timeStr(){ const o=partesAhora(); return o.hour+':'+o.minute; } // siempre hora de Buenos Aires
 function fmtDate(s){ const [y,m,d]=s.split('-'); return d+'/'+m+'/'+y; }
-function sugerirTurno(){ const h = new Date().getHours(); return h < 15 ? 'Mañana' : 'Tarde'; }
+function sugerirTurno(){ return Number(partesAhora().hour) < 15 ? 'Mañana' : 'Tarde'; }
 function showToast(msg){
   const t = document.getElementById('toast');
   t.textContent = msg; t.classList.add('show');
@@ -861,7 +869,7 @@ function ventasDe(fecha){ return state.ventas.filter(v=>v.fecha===fecha); }
 function fechaSumandoDias(fecha, dias){
   const d = new Date(fecha+'T12:00:00');
   d.setDate(d.getDate()+dias);
-  return d.toISOString().slice(0,10);
+  return fechaLocalStr(d);
 }
 function totalNetoDeFecha(fecha){
   const ventas = ventasDe(fecha).reduce((total,v)=>total+Number(v.total||0),0);
@@ -888,25 +896,58 @@ const MESES_LARGO = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','A
 const MESES_CORTO = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 function fmtMes(m){ const [y,mm]=m.split('-'); return MESES_LARGO[Number(mm)-1]+' '+y; }
 function mesSumando(m,n){ const [y,mm]=m.split('-').map(Number); const d=new Date(y,mm-1+n,1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
-function gananciaPorPrenda(filtroFecha){
-  const mapa = {}; const sinCosto = new Set();
+function esGastoDeDevolucion(g){ return /^(Devolución|Diferencia de cambio):/.test(String(g.desc||'')); }
+function costoDeItem(item, productoId){
+  const prod = state.productos.find(p=>p.id===productoId);
+  const cv = item ? (Number(item.costoUnit)||0) : 0;
+  return cv>0 ? cv : (Number(prod ? prod.costo : 0)||0);
+}
+/* Ganancia bruta = ventas − devoluciones/cambios (precio − costo) × cantidad. Neta = bruta − gastos de turnos
+   (los reintegros en efectivo que se cargan como gasto de turno se excluyen: ya están en las devoluciones). */
+function calcularGanancia(filtroFecha){
+  const mapa = {}; const sinCosto = new Set(); let ajusteDev = 0;
+  const fila = nombre => (mapa[nombre] = mapa[nombre] || {nombre, cantidad:0, ganancia:0, venta:0});
   state.ventas.filter(v=>filtroFecha(v.fecha)).forEach(v=>v.items.forEach(i=>{
-    const prod = state.productos.find(p=>p.id===i.productoId);
-    const costoVenta = Number(i.costoUnit)||0;
-    const costo = costoVenta>0 ? costoVenta : (Number(prod ? prod.costo : 0)||0);
+    const costo = costoDeItem(i, i.productoId);
     if(!(costo>0)){ sinCosto.add(i.nombre); return; }
-    const m = mapa[i.nombre] = mapa[i.nombre] || {nombre:i.nombre, cantidad:0, ganancia:0, venta:0};
+    const m = fila(i.nombre);
     m.cantidad += i.cantidad;
     m.venta += i.cantidad*i.precioUnit;
     m.ganancia += i.cantidad*(i.precioUnit-costo);
   }));
-  const filas = Object.values(mapa).sort((a,b)=>b.ganancia-a.ganancia);
-  return {filas, sinCosto:[...sinCosto], total:filas.reduce((t,f)=>t+f.ganancia,0)};
+  state.devoluciones.filter(d=>filtroFecha(d.fecha)).forEach(d=>{
+    const venta = d.ventaId ? state.ventas.find(v=>v.id===d.ventaId) : null;
+    const item = venta && d.itemIdx!=null ? venta.items[d.itemIdx] : null;
+    const cant = Number(d.cantidad)||0;
+    const costo = costoDeItem(item, d.productoId);
+    const precio = cant ? Number(d.montoDevuelto||0)/cant : 0;
+    if(costo>0 && cant){
+      const g = cant*(precio-costo);
+      const m = fila(item ? item.nombre : d.nombre);
+      m.cantidad -= cant; m.venta -= cant*precio; m.ganancia -= g; ajusteDev -= g;
+    }
+    if(esCambioDevolucion(d)){
+      productosRecibidosCambio(d).forEach(l=>{
+        const prod = state.productos.find(p=>p.id===l.productoId);
+        const c = Number(prod ? prod.costo : 0)||0;
+        const nombre = prod ? prod.nombre+(prod.descripcion?' ('+prod.descripcion+')':'') : l.nombre;
+        if(!(c>0)){ sinCosto.add(nombre); return; }
+        const q = Number(l.cantidad||0), pu = Number(l.precioUnit||0);
+        const m = fila(nombre);
+        m.cantidad += q; m.venta += q*pu; m.ganancia += q*(pu-c); ajusteDev += q*(pu-c);
+      });
+    }
+  });
+  const filas = Object.values(mapa).filter(f=>f.cantidad!==0 || Math.abs(f.ganancia)>0.5).sort((a,b)=>b.ganancia-a.ganancia);
+  const bruta = filas.reduce((t,f)=>t+f.ganancia,0);
+  const gastos = state.turnos.filter(t=>filtroFecha(t.fecha))
+    .reduce((tot,t)=>tot+(t.gastos||[]).filter(g=>!esGastoDeDevolucion(g)).reduce((x,g)=>x+Number(g.monto||0),0),0);
+  return {filas, sinCosto:[...sinCosto], bruta, gastos, neta:bruta-gastos, ajusteDev};
 }
 function renderGraficoGananciaPrendas(){
   const esMes = gananciaModo==='mes';
   const filtro = esMes ? (f=>f.startsWith(gananciaMes)) : (f=>f===historialFecha);
-  const {filas, sinCosto, total} = gananciaPorPrenda(filtro);
+  const {filas, sinCosto, bruta, gastos, neta, ajusteDev} = calcularGanancia(filtro);
   const LIMITE = 15;
   const mostradas = filas.slice(0,LIMITE);
   const max = Math.max(1,...mostradas.map(f=>Math.abs(f.ganancia)));
@@ -924,23 +965,28 @@ function renderGraficoGananciaPrendas(){
   let tendencia = '';
   if(esMes){
     const meses = Array.from({length:12},(_,i)=>mesSumando(gananciaMes,i-11));
-    const datos = meses.map(m=>({m, total:gananciaPorPrenda(f=>f.startsWith(m)).total}));
-    const maxM = Math.max(1,...datos.map(d=>d.total));
+    const datos = meses.map(m=>({m, ...calcularGanancia(f=>f.startsWith(m))}));
+    const maxM = Math.max(1,...datos.map(d=>Math.max(d.bruta,d.neta)));
+    const alto = x=>Math.max(3,(Math.max(0,x)/maxM)*145);
     tendencia = `
-    <div style="font-size:12px;color:var(--ink-soft);margin:10px 0 2px;">Ganancia por mes · últimos 12 meses (tocá una barra para ver ese mes)</div>
+    <div style="font-size:12px;color:var(--ink-soft);margin:10px 0 2px;">Ganancia por mes · últimos 12 meses (tocá una columna para ver ese mes)</div>
+    <div style="font-size:11px;color:var(--ink-soft);margin-bottom:2px;"><span style="color:var(--mustard);">■</span> Bruta &nbsp; <span style="color:var(--warn);">■</span> Neta (después de gastos) &nbsp; <span style="color:var(--brick);">■</span> Neta negativa</div>
     <div style="overflow-x:auto;">
-      <div class="sales-chart" style="min-width:${12*42}px;">${datos.map(d=>`
-        <div class="sales-chart-day" style="cursor:pointer;" title="${fmtMes(d.m)} · ${money(d.total)}" onclick="gananciaMes='${d.m}'; renderAll();">
-          <span class="sales-chart-value">${money(d.total)}</span>
-          <div class="sales-chart-bar" style="height:${Math.max(3,(Math.max(0,d.total)/maxM)*145)}px;opacity:${d.m===gananciaMes?1:0.5};"></div>
+      <div class="sales-chart" style="min-width:${12*46}px;">${datos.map(d=>`
+        <div class="sales-chart-day" style="cursor:pointer;" title="${fmtMes(d.m)} · bruta ${money(d.bruta)} · gastos ${money(d.gastos)} · neta ${money(d.neta)}" onclick="gananciaMes='${d.m}'; renderAll();">
+          <span class="sales-chart-value">${money(d.neta)}</span>
+          <div style="display:flex;align-items:flex-end;gap:2px;width:100%;justify-content:center;opacity:${d.m===gananciaMes?1:0.5};">
+            <div class="sales-chart-bar" style="width:38%;max-width:18px;height:${alto(d.bruta)}px;background:var(--mustard);"></div>
+            <div class="sales-chart-bar" style="width:38%;max-width:18px;height:${alto(d.neta)}px;background:${d.neta<0?'var(--brick)':'var(--warn)'};border-color:transparent;"></div>
+          </div>
           <span class="sales-chart-label" style="${d.m===gananciaMes?'color:var(--ink);font-weight:600;':''}">${MESES_CORTO[Number(d.m.slice(5,7))-1]} ${d.m.slice(2,4)}</span>
         </div>`).join('')}</div>
     </div>
-    <div style="font-size:12px;color:var(--ink-soft);margin:14px 0 2px;">Ganancia por prenda · ${fmtMes(gananciaMes)}</div>`;
+    <div style="font-size:12px;color:var(--ink-soft);margin:14px 0 2px;">Ganancia bruta por prenda · ${fmtMes(gananciaMes)}</div>`;
   }
   return `
   <div class="card">
-    <div class="card-title"><span>Ganancia · ${esMes ? fmtMes(gananciaMes) : fmtDate(historialFecha)}</span><span class="num">${money(total)}</span></div>
+    <div class="card-title"><span>Ganancia · ${esMes ? fmtMes(gananciaMes) : fmtDate(historialFecha)}</span><span class="num">${money(neta)}</span></div>
     <div class="row" style="align-items:flex-end;margin-bottom:6px;">
       <div class="field" style="flex:0 0 auto;">
         <label>Ver por</label>
@@ -954,7 +1000,12 @@ function renderGraficoGananciaPrendas(){
         <input type="month" value="${gananciaMes}" onchange="gananciaMes=this.value||gananciaMes; renderAll();">
       </div>` : `<p class="section-note" style="margin:0;">El día se elige con la fecha de arriba.</p>`}
     </div>
-    <p class="section-note" style="margin-bottom:4px;">Ganancia = (precio de venta − costo unitario) × cantidad. Solo visible para el administrador.</p>
+    <div class="top-summary" style="margin-bottom:8px;">
+      <div class="stat"><div class="v">${money(bruta)}</div><div class="l">Ganancia bruta</div></div>
+      <div class="stat"><div class="v">${money(gastos)}</div><div class="l">Gastos de turnos</div></div>
+      <div class="stat"><div class="v" style="color:${neta<0?'var(--brick)':'inherit'};">${money(neta)}</div><div class="l">Ganancia neta</div></div>
+    </div>
+    <p class="section-note" style="margin-bottom:4px;">Bruta = (precio de venta − costo unitario) × cantidad, ya restando devoluciones y cambios${ajusteDev ? ' ('+(ajusteDev>0?'+':'−')+money(Math.abs(ajusteDev))+' en este período)' : ''}. Neta = bruta − gastos cargados en los turnos. La mercadería que comprás no se resta acá porque ya está en el costo de cada prenda. Solo visible para el administrador.</p>
     ${tendencia}
     ${barras}
     ${sinCosto.length ? `<p class="section-note" style="margin-top:8px;">Sin costo cargado (no incluidas): ${sinCosto.map(escaparHTML).join(', ')}.</p>` : ''}
@@ -995,10 +1046,58 @@ function aplicarAjusteDevolucionPorMetodo(porMetodo, devolucion){
   if(ajuste && porMetodo[metodo]!=null) porMetodo[metodo] += ajuste;
 }
 
+const PINS_DEBILES = ['1234','0000','1111','2222','4321','1212','1010'];
+function esPinDebil(pin){ return PINS_DEBILES.includes(String(pin)); }
+function diasDesde(fecha){ return Math.floor((new Date(todayStr()+'T12:00:00') - new Date(fecha+'T12:00:00'))/86400000); }
+function cambiarPin(rol, valor){
+  valor = String(valor).trim();
+  const otro = rol==='admin' ? 'empleado' : 'admin';
+  let error = '';
+  if(!/^\d{4,8}$/.test(valor)) error = 'El PIN debe tener entre 4 y 8 números';
+  else if(esPinDebil(valor)) error = 'Ese PIN es muy fácil de adivinar, elegí otro';
+  else if(valor===state.config.pins[otro]) error = 'El PIN de admin y el de empleado no pueden ser iguales';
+  if(error){ showToast(error); renderAll(); return; }
+  state.config.pins[rol] = valor;
+  save();
+  showToast('PIN actualizado');
+  renderAll();
+}
+function posponerAvisoRespaldo(){
+  state.config.respaldoPospuestoHasta = fechaSumandoDias(todayStr(), 2);
+  save();
+  renderAll();
+}
+function renderAvisosAdmin(){
+  if(session!=='admin') return '';
+  let h = '';
+  const estilo = 'border-color:var(--warn);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;margin-bottom:10px;';
+  const hayDatos = state.productos.length>0 || state.ventas.length>0;
+  const ult = state.config.ultimoRespaldo;
+  const pospuesto = state.config.respaldoPospuestoHasta && todayStr() < state.config.respaldoPospuestoHasta;
+  if(hayDatos && !pospuesto && (!ult || diasDesde(ult)>=7)){
+    h += `<div class="card" style="${estilo}">
+      <span>⚠ ${ult ? 'Hace '+diasDesde(ult)+' días que no descargás una copia de seguridad.' : 'Todavía no descargaste ninguna copia de seguridad.'} Los datos están solo en este dispositivo.</span>
+      <span style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="btn small primary" onclick="exportarDatos(); renderAll();">Descargar copia ahora</button>
+        <button class="btn small ghost" onclick="posponerAvisoRespaldo()">Recordármelo en 2 días</button>
+      </span>
+    </div>`;
+  }
+  const pins = state.config.pins||{};
+  const debiles = [esPinDebil(pins.admin)?'Admin':'', esPinDebil(pins.empleado)?'Empleado':''].filter(Boolean);
+  if(debiles.length){
+    h += `<div class="card" style="${estilo}">
+      <span>⚠ El PIN de ${debiles.join(' y ')} es fácil de adivinar. Cambialo por uno propio.</span>
+      <button class="btn small primary" onclick="goTab('ajustes')">Cambiar PIN</button>
+    </div>`;
+  }
+  return h;
+}
+
 /* ---------- navegación ---------- */
 let currentTab = 'vender';
 const ALL_TABS = [
-  {id:'turno', label:'Turno', roles:['admin']},
+  {id:'turno', label:'Turno', roles:['admin','empleado']},
   {id:'vender', label:'Vender', roles:['admin','empleado']},
   {id:'stock', label:'Stock', roles:['admin','empleado']},
   {id:'devoluciones', label:'Devoluciones', roles:['admin','empleado']},
@@ -1071,6 +1170,7 @@ function renderAll(){
   else if(currentTab==='devoluciones') c.innerHTML = renderDevoluciones();
   else if(currentTab==='compras') c.innerHTML = renderCompras();
   else if(currentTab==='ajustes') c.innerHTML = renderAjustes();
+  if(session==='admin') c.innerHTML = renderAvisosAdmin() + c.innerHTML;
   afterRenderHooks();
   restoreFocusableTarget(focusSnapshot);
   restoreReceiptScroll();
@@ -1457,6 +1557,38 @@ function guardarCostosPendientes(){
   renderAll();
 }
 
+let masVendidasAbierto = false;
+function masVendidas30Dias(){
+  const desde = fechaSumandoDias(todayStr(),-29);
+  const acum = {};
+  state.ventas.filter(v=>v.fecha>=desde).forEach(v=>v.items.forEach(i=>{
+    const a = acum[i.productoId] = acum[i.productoId] || {productoId:i.productoId, nombre:i.nombre, cant:0};
+    a.cant += Number(i.cantidad||0);
+  }));
+  return Object.values(acum).sort((a,b)=>b.cant-a.cant).slice(0,5).map(x=>{
+    const p = state.productos.find(p=>p.id===x.productoId);
+    return {...x, existe:!!p,
+      stock: p ? p.variantes.reduce((t,v)=>t+Number(v.stock||0),0) : 0};
+  });
+}
+function renderAlertasStock(){
+  const top = masVendidas30Dias();
+  const cardTop = `
+  <div class="card">
+    <div class="card-title" style="cursor:pointer;" onclick="masVendidasAbierto=!masVendidasAbierto; renderAll();">
+      <span>Más vendidas · últimos 30 días</span>
+      <span class="muted" style="font-size:12px;">${masVendidasAbierto?'Ocultar':'Ver'}</span>
+    </div>
+    ${masVendidasAbierto ? (top.length===0 ? '<p class="empty">Todavía no hay ventas en los últimos 30 días.</p>' : `
+    <p class="section-note" style="margin-bottom:6px;">Las 5 prendas con más unidades vendidas y cuánto stock te queda.</p>
+    <table><thead><tr><th>#</th><th>Prenda</th><th>Vendidas</th><th>Stock actual</th></tr></thead><tbody>
+    ${top.map((x,i)=>`<tr><td class="num">${i+1}</td><td>${escaparHTML(x.nombre)}</td><td class="num">${x.cant}</td>
+      <td>${x.existe ? `<span class="pill ${x.stock<=0?'low':'ok'}">${x.stock}</span>` : '<span class="muted">ya no está en stock</span>'}</td></tr>`).join('')}
+    </tbody></table>`) : ''}
+  </div>`;
+  return cardTop;
+}
+
 function renderStock(){
   const categorias = state.config.categorias;
   if(!nuevoProd.categoria) nuevoProd.categoria = categorias[0] || '';
@@ -1477,6 +1609,7 @@ function renderStock(){
   <h2 class="section-title">Stock</h2>
   <p class="section-note">Tus productos, talles/colores y cantidades disponibles.</p>
   ${renderCostosPendientes()}
+  ${renderAlertasStock()}
   <div class="row" style="margin-bottom:12px;">
     ${state.etiquetasInicialesImpresas ? '' : `<button class="btn" onclick="imprimirEtiquetasStock('todas')">Imprimir todas (${contarEtiquetasStock()})</button>`}
     <button class="btn primary" onclick="imprimirEtiquetasStock('nuevas')" ${contarEtiquetasPendientes()===0?'disabled':''}>Nuevas Etiquetas (${contarEtiquetasPendientes()})</button>
@@ -2060,7 +2193,7 @@ function renderDevoluciones(){
         <td>${esCambio ? descripcionProductosRecibidos(d) : 'Reintegro '+d.reintegro}</td>
         <td class="num">${d.cantidad}</td>
         <td class="num" style="color:${color};">${texto}</td>
-        <td><button class="link-btn" onclick="eliminarDevolucion('${d.id}')">eliminar</button></td>
+        <td>${session==='admin' ? `<button class="link-btn" onclick="eliminarDevolucion('${d.id}')">eliminar</button>` : ''}</td>
       </tr>`;
     }).join('')}</tbody></table>`}
   </div>
@@ -2272,6 +2405,7 @@ function confirmarDevolucion(){
 }
 
 function eliminarDevolucion(id){
+  if(session!=='admin') return;
   const d = state.devoluciones.find(d=>d.id===id);
   if(!d) return;
   if(!confirm('¿Eliminar esta devolución del historial?')) return;
@@ -2356,21 +2490,21 @@ function renderTurno(){
       ${METODOS.map(m=>`<div class="totalline"><span class="muted">${m}</span><span class="num">${money(porMetodo[m])}</span></div>`).join('')}
       <div class="totalline big"><span>Total neto</span><span class="num">${money(ventasTurno.reduce((total,v)=>total+Number(v.total||0),0)+ajustesDevoluciones)}</span></div>
     </div>
-    <div class="card">
+    ${session === 'admin' ? `<div class="card">
       <div class="card-title">Efectivo en caja</div>
       <div class="totalline"><span class="muted">Cambio inicial</span><span class="num">${money(t.cambioInicial)}</span></div>
       <div class="totalline"><span class="muted">+ Ventas efectivo</span><span class="num">${money(efectivoVentas)}</span></div>
       <div class="totalline"><span class="muted">+ Diferencias cobradas en efectivo</span><span class="num">${money(ingresosCambioEfectivo)}</span></div>
       <div class="totalline"><span class="muted">− Gastos</span><span class="num">${money(totalGastos)}</span></div>
       <div class="totalline big"><span>Esperado</span><span class="num">${money(efectivoEsperado)}</span></div>
-    </div>
+    </div>` : ''}
   </div>
 
   <div class="card">
     <div class="card-title">Gastos del turno <span class="muted" style="font-weight:400;font-size:12px;">(compras chicas, viáticos, etc.)</span></div>
     ${t.gastos.length===0 ? '<p class="empty">Sin gastos registrados.</p>' : `
     <table><thead><tr><th>Hora</th><th>Descripción</th><th>Monto</th><th></th></tr></thead>
-    <tbody>${t.gastos.map((g,idx)=>`<tr><td>${g.hora}</td><td>${g.desc}</td><td class="num">${money(g.monto)}</td><td><button class="link-btn" onclick="quitarGasto('${t.id}',${idx})">quitar</button></td></tr>`).join('')}</tbody></table>`}
+    <tbody>${t.gastos.map((g,idx)=>`<tr><td>${g.hora}</td><td>${g.desc}</td><td class="num">${money(g.monto)}</td><td>${session==='admin' ? `<button class="link-btn" onclick="quitarGasto('${t.id}',${idx})">quitar</button>` : ''}</td></tr>`).join('')}</tbody></table>`}
     <div class="row" style="margin-top:8px;">
       <div class="field" style="flex:2 1 160px;"><label>Descripción</label><input type="text" placeholder="Ej: galletitas" value="${nuevoGasto.desc}" oninput="nuevoGasto.desc=this.value"></div>
       <div class="field" style="flex:1 1 100px;"><label>Monto</label><input type="number" min="0" placeholder="0" value="${nuevoGasto.monto}" oninput="nuevoGasto.monto=this.value"></div>
@@ -2385,7 +2519,7 @@ function renderTurno(){
     <div class="row">
       <div class="field" style="max-width:160px;"><label>Efectivo contado</label><input type="number" min="0" value="${cambioFinalInput}" oninput="cambioFinalInput=this.value"></div>
     </div>
-    <p class="section-note">Esperado: ${money(efectivoEsperado)} ${cambioFinalInput!=='' ? '· Diferencia: ' + money(Number(cambioFinalInput)-efectivoEsperado) : ''}</p>
+    ${session === 'admin' ? `<p class="section-note">Esperado: ${money(efectivoEsperado)} ${cambioFinalInput!=='' ? '· Diferencia: ' + money(Number(cambioFinalInput)-efectivoEsperado) : ''}</p>` : ''}
     <button class="btn primary" onclick="cerrarTurno('${t.id}', ${efectivoEsperado})">Confirmar cierre</button>
     <button class="btn ghost" onclick="cerrandoTurno=false; renderAll();">Cancelar</button>
     `}
@@ -2396,7 +2530,7 @@ function renderTurno(){
 }
 
 function renderTurnosCerrados(cerrados){
-  if(!cerrados.length) return '';
+  if(!cerrados.length || session!=='admin') return '';
   return `
   <hr class="stitch">
   <h3 style="font-family:var(--font-display);font-weight:700;font-size:18px;margin:0 0 8px;">Turnos anteriores</h3>
@@ -2439,6 +2573,7 @@ function agregarGasto(turnoId){
   renderAll();
 }
 function quitarGasto(turnoId, idx){
+  if(session!=='admin') return;
   const t = state.turnos.find(t=>t.id===turnoId);
   t.gastos.splice(idx,1);
   save(); renderAll();
@@ -2873,18 +3008,18 @@ function renderAjustes(){
     <div class="row">
       <div class="field" style="max-width:160px;">
         <label>PIN Admin</label>
-        <input type="text" value="${state.config.pins.admin}" onchange="state.config.pins.admin=this.value; save();">
+        <input type="text" inputmode="numeric" maxlength="8" value="${state.config.pins.admin}" onchange="cambiarPin('admin',this.value)">
       </div>
       <div class="field" style="max-width:160px;">
         <label>PIN Empleado</label>
-        <input type="text" value="${state.config.pins.empleado}" onchange="state.config.pins.empleado=this.value; save();">
+        <input type="text" inputmode="numeric" maxlength="8" value="${state.config.pins.empleado}" onchange="cambiarPin('empleado',this.value)">
       </div>
     </div>
   </div>
 
   <div class="card">
     <div class="card-title">Copia de seguridad</div>
-    <p class="section-note" style="margin-top:-4px;">Los datos se guardan solo en este dispositivo/navegador. Descargá una copia de vez en cuando por las dudas.</p>
+    <p class="section-note" style="margin-top:-4px;">Los datos se guardan solo en este dispositivo/navegador. Descargá una copia al menos una vez por semana. Última copia: <b>${state.config.ultimoRespaldo ? fmtDate(state.config.ultimoRespaldo)+' (hace '+diasDesde(state.config.ultimoRespaldo)+' día(s))' : 'nunca'}</b>.</p>
     <div class="row">
       <button class="btn" onclick="exportarDatos()">Descargar copia (.json)</button>
       <label class="btn ghost" style="cursor:pointer;">Importar copia
@@ -2929,6 +3064,9 @@ function eliminarCategoria(cat){
 }
 
 function exportarDatos(){
+  state.config.ultimoRespaldo = todayStr();
+  delete state.config.respaldoPospuestoHasta;
+  save();
   const contenido = JSON.stringify(state,null,2);
   descargarArchivo('zero-zed-backup-'+todayStr()+'.json', contenido, 'application/json');
 }
