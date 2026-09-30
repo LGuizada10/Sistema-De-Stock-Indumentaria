@@ -1,4 +1,29 @@
-venv/
-*.db
-__pycache__/
+# Copias de seguridad de datos (contienen ventas, costos y PINs del local)
+zero-zed-backup-*.json
+*backup*.json
+*.bak
+ 
+# Exportaciones generadas por la app
+*.xlsx
+*.csv
+etiquetas*.pdf
+ 
+# Claves y credenciales (para cuando subas la versión NUBE)
+.env
+.env.*
+config.local.*
+secrets*
+ 
+# Sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini
+ 
+# Editores
 .vscode/
+.idea/
+*.swp
+ 
+# Dependencias, por si en el futuro agregás herramientas
+node_modules/
+__pycache__/

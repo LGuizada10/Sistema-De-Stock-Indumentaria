@@ -535,12 +535,14 @@
   #labelPrintOverlay.active{display:block;position:fixed;inset:0;z-index:100;background:var(--paper);color:var(--ink);overflow:auto;padding:16px;}
   .label-print-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;max-width:1000px;margin:0 auto 16px;}
   .label-grid{display:grid;grid-template-columns:repeat(3,62mm);gap:2mm;justify-content:center;}
-  .price-label{height:38mm;border:1px solid #25352B;border-radius:2mm;background:#FFFFFF;color:#101713;padding:3mm;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden;break-inside:avoid;}
-  .price-label-name{font:700 10pt var(--font-body);line-height:1.15;max-height:8mm;overflow:hidden;}
-  .price-label-variant{font:500 8pt var(--font-body);color:#435448;}
-  .price-label-code{font:600 8pt var(--font-mono);letter-spacing:.2px;}
-  .price-label-prices{display:grid;grid-template-columns:1fr 1fr;column-gap:3mm;row-gap:1mm;font:600 7pt var(--font-body);}
-  .price-label-prices strong{font:700 8pt var(--font-mono);}
+  .price-label{height:38mm;border:1px solid #25352B;border-radius:2mm;background:#FFFFFF;color:#101713;padding:2.5mm 3mm;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden;break-inside:avoid;}
+  .price-label-name{font:700 9pt var(--font-body);line-height:1.15;max-height:7.4mm;overflow:hidden;}
+  .price-label-variant{font:500 7.5pt var(--font-body);color:#435448;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .price-label-barcode{display:flex;flex-direction:column;align-items:center;gap:.3mm;flex:0 0 auto;}
+  .price-label-barcode svg{flex:0 0 auto;}
+  .price-label-barcode span{font:600 6.5pt var(--font-mono);letter-spacing:.3px;line-height:1;}
+  .price-label-prices{display:grid;grid-template-columns:1fr 1fr;column-gap:3mm;row-gap:.8mm;font:600 6.5pt var(--font-body);line-height:1.2;}
+  .price-label-prices strong{font:700 7.5pt var(--font-mono);}
   .exchange-results{max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:7px;background:var(--paper);overscroll-behavior:contain;}
   .exchange-result{display:flex;width:100%;align-items:center;justify-content:space-between;gap:12px;padding:9px 10px;border:0;border-bottom:1px solid var(--line-soft);background:transparent;color:var(--ink);text-align:left;cursor:pointer;}
   .exchange-result:last-child{border-bottom:0;}
@@ -1617,6 +1619,7 @@ let nuevoProd = {nombre:'', descripcion:'', categoria:'', costo:'', precio:''};
 let addVarianteFormFor = null;
 let nuevaVariante = {talle:'', color:'', stock:'', codigo:''};
 let productoEditandoId = null;
+let productoAEliminarId = null;
 let productoEditDraft = null;
 let stockSearch = '', stockClaveConsultada = '';
 let stockCategoryFilter = '';
@@ -1709,22 +1712,18 @@ function renderAlertasStock(){
   return cardTop;
 }
 
-let catFiltroExpandido = false;
-const LIMITE_CATEGORIAS_VISIBLES = 8;
 function renderFiltroCategorias(categorias){
-  let visibles = categorias;
-  if(!catFiltroExpandido && categorias.length>LIMITE_CATEGORIAS_VISIBLES){
-    visibles = categorias.slice(0,LIMITE_CATEGORIAS_VISIBLES);
-    if(stockCategoryFilter && categorias.includes(stockCategoryFilter) && !visibles.includes(stockCategoryFilter)) visibles = [...visibles, stockCategoryFilter];
-  }
-  const ocultas = categorias.length - visibles.length;
+  const conteo = {};
+  state.productos.forEach(p=>{ conteo[p.categoria] = (conteo[p.categoria]||0) + 1; });
+  const lista = (stockCategoryFilter && !categorias.includes(stockCategoryFilter)) ? [...categorias, stockCategoryFilter] : categorias;
+  const opciones = lista.map(c=>`<option value="${escaparHTML(c)}" ${stockCategoryFilter===c?'selected':''}>${escaparHTML(c)} (${conteo[c]||0})</option>`).join('');
   return `
-  <div class="muted" style="font-size:11.5px;margin:6px 0 4px;">Filtrar por categoría:</div>
-  <div class="cat-wrap">
-    <button class="cat-scroll-chip ${stockCategoryFilter===''?'active':''}" onclick="stockCategoryFilter=''; renderAll();">Todas</button>
-    ${visibles.map(c=>`<button class="cat-scroll-chip ${stockCategoryFilter===c?'active':''}" onclick="stockCategoryFilter='${c.replace(/'/g,"\\'")}'; renderAll();">${escaparHTML(c)}</button>`).join('')}
-    ${ocultas>0 ? `<button class="cat-scroll-chip" style="border-style:dashed;" onclick="catFiltroExpandido=true; renderAll();">+${ocultas} más</button>` : ''}
-    ${catFiltroExpandido && categorias.length>LIMITE_CATEGORIAS_VISIBLES ? `<button class="cat-scroll-chip" style="border-style:dashed;" onclick="catFiltroExpandido=false; renderAll();">Ver menos</button>` : ''}
+  <div class="field" style="max-width:300px;">
+    <label>Categoría</label>
+    <select onchange="stockCategoryFilter=this.value; renderAll();">
+      <option value="">Todas las categorías (${state.productos.length})</option>
+      ${opciones}
+    </select>
   </div>`;
 }
 function renderStock(){
@@ -1753,12 +1752,15 @@ function renderStock(){
     <button class="btn primary" onclick="imprimirEtiquetasStock('nuevas')" ${contarEtiquetasPendientes()===0?'disabled':''}>Nuevas Etiquetas (${contarEtiquetasPendientes()})</button>
   </div>
 
+  <div class="row" style="align-items:flex-end;margin-bottom:4px;">
   <div class="field" style="max-width:340px;">
     <label>Buscar por clave o nombre</label>
     <input type="text" data-search="stock" placeholder="Ej: REM-SAK o jean..." value="${stockSearch}" aria-label="Buscar por clave o nombre" oninput="actualizarBusqueda('stock', this);" onkeydown="buscarClaveConEnter('stock', event, this);">
   </div>
-  <div id="stockClaveResultado">${renderHistorialClave(stockClaveConsultada)}</div>
   ${renderFiltroCategorias(categorias)}
+  </div>
+  <div id="stockClaveResultado">${renderHistorialClave(stockClaveConsultada)}</div>
+  <div style="height:8px;"></div>
 
   <button class="btn primary" onclick="showNuevoProducto=!showNuevoProducto; renderAll();">${showNuevoProducto?'Cancelar':'+ Añadir prenda'}</button>
 
@@ -1876,11 +1878,11 @@ function imprimirEtiquetasStock(modo='todas'){
       const precio=Number(producto.precio)||0;
       const precioDebito=precio+Math.round(precio*pctDebito/100);
       const precioCredito=precio+Math.round(precio*pctCredito/100);
-      const varianteTexto=[variante.talle,variante.color].filter(Boolean).join(' / ')||'Único';
+      const varianteTexto=([variante.talle,variante.color].filter(Boolean).join(' / ')||'Único')+(producto.descripcion?' · '+producto.descripcion:'');
       return `<article class="price-label">
         <div class="price-label-name">${escaparHTML(producto.nombre)}</div>
         <div class="price-label-variant">${escaparHTML(varianteTexto)}</div>
-        <div class="price-label-code">${escaparHTML(variante.codigo||'SIN CLAVE')}</div>
+        <div class="price-label-barcode">${variante.codigo ? code128Svg(variante.codigo,'6mm') : ''}<span>${escaparHTML(variante.codigo||'SIN CLAVE')}</span></div>
         <div class="price-label-prices">
           <span>Efectivo / transferencia<br><strong>${money(precio)}</strong></span>
           <span>Débito<br><strong>${money(precioDebito)}</strong></span>
@@ -1977,14 +1979,48 @@ function renderProductoCard(p){
         <div class="field" style="flex:0 0 auto;justify-content:flex-end;">
           <div style="display:flex;gap:6px;"><button class="btn small primary" onclick="guardarVariante('${p.id}')">Agregar</button><button class="btn small ghost" onclick="addVarianteFormFor=null; renderAll();">Cancelar</button></div>
         </div>
-      ` : `<button class="btn small ghost" onclick="addVarianteFormFor='${p.id}'; nuevaVariante={talle:'',color:'',stock:'',codigo:''}; renderAll();">+ Talle/color</button>
-      <button class="btn small danger" onclick="eliminarProducto('${p.id}')">Eliminar producto</button>`}
+      ` : `<button class="btn small ghost" onclick="addVarianteFormFor='${p.id}'; nuevaVariante={talle:'',color:'',stock:'',codigo:''}; renderAll();">+ Talle/color</button>`}
+      ${productoAEliminarId===p.id ? `
+        <span class="muted" style="font-size:12.5px;align-self:center;">¿Eliminar este producto y todas sus variantes?</span>
+        <button class="btn small danger" onclick="eliminarProducto('${p.id}')">Sí, eliminar</button>
+        <button class="btn small ghost" onclick="productoAEliminarId=null; renderAll();">Cancelar</button>
+      ` : `<button class="btn small danger" onclick="pedirEliminarProducto('${p.id}')">Eliminar producto</button>`}
     </div>
   </div>`;
 }
 
 function normalizarClave(texto){
   return (texto||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]/g,'').toUpperCase();
+}
+/* ===== Código de barras Code 128 (subconjunto B), sin librerías externas ===== */
+const CODE128_PATRONES = ["212222", "222122", "222221", "121223", "121322", "131222", "122213", "122312", "132212", "221213", "221312", "231212", "112232", "122132", "122231", "113222", "123122", "123221", "223211", "221132", "221231", "213212", "223112", "312131", "311222", "321122", "321221", "312212", "322112", "322211", "212123", "212321", "232121", "111323", "131123", "131321", "112313", "132113", "132311", "211313", "231113", "231311", "112133", "112331", "132131", "113123", "113321", "133121", "313121", "211331", "231131", "213113", "213311", "213131", "311123", "311321", "331121", "312113", "312311", "332111", "314111", "221411", "431111", "111224", "111422", "121124", "121421", "141122", "141221", "112214", "112412", "122114", "122411", "142112", "142211", "241211", "221114", "413111", "241112", "134111", "111242", "121142", "121241", "114212", "124112", "124211", "411212", "421112", "421211", "212141", "214121", "412121", "111143", "111341", "131141", "114113", "114311", "411113", "411311", "113141", "114131", "311141", "411131", "211412", "211214", "211232", "2331112"];
+function code128Svg(texto, alto){
+  const t = (texto||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^\x20-\x7E]/g,'-');
+  if(!t) return '';
+  const valores = [104]; let suma = 104;
+  for(let i=0;i<t.length;i++){ const v = t.charCodeAt(i)-32; valores.push(v); suma += v*(i+1); }
+  valores.push(suma%103); valores.push(106);
+  const ZONA = 10; let x = ZONA, d = '';
+  valores.forEach(v=>{
+    const p = CODE128_PATRONES[v];
+    for(let k=0;k<p.length;k++){ const w = Number(p[k]); if(k%2===0) d += 'M'+x+' 0h'+w+'v1h-'+w+'z'; x += w; }
+  });
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+(x+ZONA)+' 1" preserveAspectRatio="none" style="width:100%;height:'+alto+';display:block;" shape-rendering="crispEdges" role="img" aria-label="Código de barras '+escaparHTML(t)+'"><path fill="#000" d="'+d+'"/></svg>';
+}
+/* Evita que variantes de productos distintos compartan código (rompería el escaneo). Si ya existe en otro producto, agrega -V2, -V3... */
+function codigoUnicoEnCatalogo(codigo, producto){
+  const base = (codigo||'').trim();
+  if(!base) return base;
+  const usado = c => state.productos.some(p=>p!==producto && p.variantes.some(v=>(v.codigo||'').toLowerCase()===c.toLowerCase()));
+  if(!usado(base)) return base;
+  let n = 2; while(usado(base+'-V'+n)) n++;
+  return base+'-V'+n;
+}
+/* Mismo nombre + distinta descripción/diseño = producto distinto (ej.: remera negra estampa blanca vs amarilla). */
+function buscarProductoPorNombre(nombre, descripcion){
+  const n = (nombre||'').trim().toLowerCase(), d = (descripcion||'').trim().toLowerCase();
+  if(d) return state.productos.find(p=>p.nombre.toLowerCase()===n && (p.descripcion||'').trim().toLowerCase()===d);
+  return state.productos.find(p=>p.nombre.toLowerCase()===n);
 }
 function sugerirCodigoVariante(nombre, talle, color='', categoria=''){
   const categoriaLimpia = normalizarClave(categoria);
@@ -2049,7 +2085,7 @@ function guardarCargaRapidaStock(){
   const nombre = nuevoProd.nombre.trim();
   if(!nombre){ showToast('Escribí el nombre de la prenda'); return; }
   const categoria = nuevoProd.categoria || state.config.categorias[0] || 'Otros';
-  let producto = state.productos.find(p=>p.nombre.toLowerCase()===nombre.toLowerCase());
+  let producto = buscarProductoPorNombre(nombre, nuevoProd.descripcion);
   if(!producto){
     producto = {id:uid(), nombre, descripcion:nuevoProd.descripcion.trim(), categoria, costo: session==='admin' ? (Number(nuevoProd.costo)||0) : 0, precio:Number(nuevoProd.precio)||0, variantes:[]};
     state.productos.push(producto);
@@ -2068,7 +2104,7 @@ function guardarCargaRapidaStock(){
   let agregadas = 0;
   talles.forEach(talle=>coloresFinales.forEach(color=>{
     const tienePlantilla = codigoBase.includes('{TALLE}') || codigoBase.includes('{COLOR}');
-    const codigo = codigoBase ? (tienePlantilla ? codigoBase.replace('{TALLE}',talle.toUpperCase()).replace('{COLOR}',color.toUpperCase()) : codigoBase+'-'+talle.toUpperCase()+(color?'-'+color.toUpperCase():'')) : sugerirCodigoVariante(producto.nombre,talle,color,categoria);
+    const codigo = codigoUnicoEnCatalogo(codigoBase ? (tienePlantilla ? codigoBase.replace('{TALLE}',talle.toUpperCase()).replace('{COLOR}',color.toUpperCase()) : codigoBase+'-'+talle.toUpperCase()+(color?'-'+color.toUpperCase():'')) : sugerirCodigoVariante(producto.nombre,talle,color,categoria), producto);
     let variante = producto.variantes.find(v=>v.codigo===codigo || (!codigo && v.talle.toLowerCase()===talle.toLowerCase() && v.color.toLowerCase()===color.toLowerCase()));
     if(!variante){ variante={id:uid(),talle,color,codigo,stock:0}; producto.variantes.push(variante); }
     variante.stock += cantidad;
@@ -2083,13 +2119,22 @@ function guardarCargaRapidaStock(){
   showToast(agregadas+' variante(s) agregada(s) al stock');
   renderAll();
 }
+function pedirEliminarProducto(id){
+  productoAEliminarId = id;
+  renderAll();
+}
 function eliminarProducto(id){
-  if(!confirm('¿Eliminar este producto y todas sus variantes?')) return;
   const producto=state.productos.find(p=>p.id===id);
-  producto?.variantes.forEach(variante=>delete state.etiquetasPendientes[variante.id]);
-  registrarMovimiento('Producto eliminado', producto ? producto.nombre+' ('+producto.variantes.length+' variante(s), '+producto.variantes.reduce((t,v)=>t+Number(v.stock||0),0)+' u. en stock)' : String(id));
+  const variantes = (producto && Array.isArray(producto.variantes)) ? producto.variantes : [];
+  state.etiquetasPendientes = state.etiquetasPendientes || {};
+  variantes.forEach(variante=>delete state.etiquetasPendientes[variante.id]);
+  registrarMovimiento('Producto eliminado', producto ? producto.nombre+' ('+variantes.length+' variante(s), '+variantes.reduce((t,v)=>t+Number(v.stock||0),0)+' u. en stock)' : String(id));
   state.productos = state.productos.filter(p=>p.id!==id);
+  productoAEliminarId = null;
+  if(addVarianteFormFor===id) addVarianteFormFor = null;
+  if(productoEditandoId===id) productoEditandoId = null;
   save(); renderAll();
+  showToast('Producto eliminado');
 }
 function dividirLista(txt){ return (txt||'').split(/[,;]+/).map(x=>x.trim()).filter(Boolean); }
 function generarClaveVarianteForm(prodId){
@@ -2119,6 +2164,7 @@ function guardarVariante(prodId){
     else if(tienePlantilla) codigo = codigoBase.replace('{TALLE}',talle.toUpperCase()).replace('{COLOR}',color.toUpperCase());
     else if(combinaciones===1) codigo = codigoBase;
     else codigo = codigoBase+'-'+talle.toUpperCase()+(color?'-'+color.toUpperCase():'');
+    codigo = codigoUnicoEnCatalogo(codigo, p);
     const existente = p.variantes.find(v=>(v.codigo && v.codigo===codigo) || ((v.talle||'').toLowerCase()===talle.toLowerCase() && (v.color||'').toLowerCase()===color.toLowerCase()));
     if(existente){
       existente.stock += cantidad;
@@ -3095,7 +3141,7 @@ function agregarCompraRapida(){
   if(!nombre){ showToast('Escribí el nombre de la prenda'); return; }
   const cantidad = Math.max(1, parseInt(compraRapida.cantidad)||0);
   const categoria = compraRapida.categoria || state.config.categorias[0] || 'Otros';
-  let producto = state.productos.find(p=>p.nombre.toLowerCase()===nombre.toLowerCase());
+  let producto = buscarProductoPorNombre(nombre, compraRapida.descripcion);
   if(!producto){
     producto = {id:uid(), nombre, descripcion:compraRapida.descripcion.trim(), categoria, costo:Number(compraRapida.costo)||0, precio:Number(compraRapida.precio)||0, variantes:[]};
     state.productos.push(producto);
@@ -3112,7 +3158,7 @@ function agregarCompraRapida(){
   const codigoBase = compraRapida.codigo.trim().toUpperCase();
   talles.forEach(talle=>coloresFinales.forEach(color=>{
     const tienePlantilla = codigoBase.includes('{TALLE}') || codigoBase.includes('{COLOR}');
-    const codigoGenerado = codigoBase ? (tienePlantilla ? codigoBase.replace('{TALLE}', talle.toUpperCase()).replace('{COLOR}', color.toUpperCase()) : codigoBase+'-'+talle.toUpperCase()+(color?'-'+color.toUpperCase():'')) : sugerirCodigoVariante(producto.nombre, talle, color, categoria);
+    const codigoGenerado = codigoUnicoEnCatalogo(codigoBase ? (tienePlantilla ? codigoBase.replace('{TALLE}', talle.toUpperCase()).replace('{COLOR}', color.toUpperCase()) : codigoBase+'-'+talle.toUpperCase()+(color?'-'+color.toUpperCase():'')) : sugerirCodigoVariante(producto.nombre, talle, color, categoria), producto);
     let variante = producto.variantes.find(v=>codigoGenerado ? v.codigo===codigoGenerado : v.talle.toLowerCase()===talle.toLowerCase() && v.color.toLowerCase()===color.toLowerCase());
     if(!variante){ variante = {id:uid(), talle, color, codigo:codigoGenerado, stock:0}; producto.variantes.push(variante); }
     const existente = compraLineas.find(l=>l.varianteId===variante.id);
