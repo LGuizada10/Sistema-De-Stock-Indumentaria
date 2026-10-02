@@ -672,7 +672,8 @@ function defaultState(){
     devoluciones: [],
     movimientos: [],
     etiquetasPendientes: {},
-    etiquetasInicialesImpresas: false
+    etiquetasInicialesImpresas: false,
+    contadorProductos: 0
   };
 }
 let state;
@@ -687,6 +688,7 @@ try{
   if(!state.config.pins) state.config.pins = { admin:"1234", empleado:"0000" };
   if(!state.devoluciones) state.devoluciones = [];
   if(!Array.isArray(state.movimientos)) state.movimientos = [];
+  if(!state.contadorProductos) state.contadorProductos = state.productos.reduce((m,p)=>Math.max(m,Number(p.num)||0),0);
   if(typeof state.etiquetasInicialesImpresas!=='boolean'){
     state.etiquetasInicialesImpresas=!!state.etiquetasPendientes
       && Object.keys(state.etiquetasPendientes).length===0
@@ -816,6 +818,20 @@ function buscarClaveConEnter(tipo, event, input){
   if(event.key!=='Enter') return;
   event.preventDefault();
   const clave = input.value.trim();
+  if(tipo==='venta'){
+    const exacta=resolverClaveExacta(clave);
+    if(exacta && exacta.v){
+      if(Number(exacta.v.stock)<=0){showToast('Esa variante está sin stock');return;}
+      ventaSelProd=exacta.p.id;
+      ventaSelVar=exacta.v.id;
+      ventaSelQty=1;
+      ventaSearch='';
+      ventaClaveConsultada='';
+      input.value='';
+      agregarAlCarrito();
+      return;
+    }
+  }
   if(tipo==='venta') ventaClaveConsultada = clave;
   if(tipo==='stock') stockClaveConsultada = clave;
   const panel = document.getElementById(tipo==='venta'?'ventaClaveResultado':'stockClaveResultado');
@@ -839,7 +855,7 @@ function renderHistorialClave(clave){
   state.productos.forEach(p=>{
     const coincideProducto = p.nombre.toLowerCase().includes(termino) || (p.descripcion||'').toLowerCase().includes(termino) || (p.categoria||'').toLowerCase().includes(termino);
     p.variantes.forEach(v=>{
-      if(coincideProducto || (v.codigo||'').toLowerCase().includes(termino)) coincidencias.push({p,v});
+      if(coincideProducto || (v.codigo||'').toLowerCase().includes(termino) || codigoBarras(v,p).toLowerCase().includes(termino)) coincidencias.push({p,v});
     });
   });
   const visibles = coincidencias.slice(0, MAX_SEARCH_ITEMS);
@@ -865,11 +881,11 @@ function actualizarResultadosVenta(){
   const productos = ventaSelCat ? state.productos.filter(p=>p.categoria===ventaSelCat) : state.productos;
   const filtrados = term ? productos.filter(p=>
     p.nombre.toLowerCase().includes(term) || (p.descripcion||'').toLowerCase().includes(term) ||
-    p.id.toLowerCase().includes(term) || p.variantes.some(v=>(v.codigo||'').toLowerCase().includes(term))
+    p.id.toLowerCase().includes(term) || p.variantes.some(v=>(v.codigo||'').toLowerCase().includes(term) || codigoBarras(v,p).toLowerCase().includes(term))
   ) : productos;
   if(term){
-    const exacta = state.productos.flatMap(p=>p.variantes.map(v=>({p,v}))).find(({v})=>(v.codigo||'').toLowerCase()===term);
-    if(exacta){ ventaSelProd=exacta.p.id; ventaSelVar=exacta.v.id; }
+    const exacta = resolverClaveExacta(term);
+    if(exacta){ ventaSelProd=exacta.p.id; ventaSelVar=exacta.v ? exacta.v.id : ''; }
   }
   document.getElementById('ventaProductoLabel').textContent = 'Producto '+(term?'('+filtrados.length+' resultado(s))':'');
   selectProducto.innerHTML = '<option value="">Elegí un producto</option>' + filtrados.slice(0, MAX_SEARCH_ITEMS).map(p=>`<option value="${p.id}">${p.nombre}${p.descripcion?(' — '+p.descripcion):''}</option>`).join('');
@@ -1427,12 +1443,8 @@ function renderVender(){
 
   // si el término coincide EXACTO con el código de una variante, la seleccionamos directo (tipo escaneo de etiqueta)
   if(term){
-    outer:
-    for(const p of productos){
-      for(const v of p.variantes){
-        if((v.codigo||'').toLowerCase()===term){ ventaSelProd = p.id; ventaSelVar = v.id; break outer; }
-      }
-    }
+    const exacta = resolverClaveExacta(term);
+    if(exacta){ ventaSelProd = exacta.p.id; ventaSelVar = exacta.v ? exacta.v.id : ''; }
   }
 
   let prodsFiltrados = ventaSelCat ? productos.filter(p=>p.categoria===ventaSelCat) : productos;
@@ -1441,7 +1453,7 @@ function renderVender(){
       p.nombre.toLowerCase().includes(term) ||
       (p.descripcion||'').toLowerCase().includes(term) ||
       p.id.toLowerCase().includes(term) ||
-      p.variantes.some(v=>(v.codigo||'').toLowerCase().includes(term))
+      p.variantes.some(v=>(v.codigo||'').toLowerCase().includes(term) || codigoBarras(v,p).toLowerCase().includes(term))
     );
   }
   const prodSel = productos.find(p=>p.id===ventaSelProd);
@@ -1796,7 +1808,6 @@ function renderStock(){
       <div class="field"><label>Talles</label><input type="text" placeholder="1,2,3 o S,M,L" value="${nuevaVariante.talle}" oninput="nuevaVariante.talle=this.value"></div>
       <div class="field"><label>Colores</label><input type="text" placeholder="Negro,Blanco" value="${nuevaVariante.color}" oninput="nuevaVariante.color=this.value"></div>
       <div class="field" style="max-width:110px;"><label>Cantidad</label><input type="number" min="1" value="${nuevaVariante.stock||1}" oninput="nuevaVariante.stock=this.value"></div>
-      <div class="field" style="flex:1 1 150px;"><label>Clave base (opcional)</label><input type="text" placeholder="REM-SAK" value="${nuevaVariante.codigo}" oninput="nuevaVariante.codigo=this.value"></div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <button class="btn primary" onclick="guardarCargaRapidaStock()">Agregar al stock</button>
@@ -1879,10 +1890,11 @@ function imprimirEtiquetasStock(modo='todas'){
       const precioDebito=precio+Math.round(precio*pctDebito/100);
       const precioCredito=precio+Math.round(precio*pctCredito/100);
       const varianteTexto=([variante.talle,variante.color].filter(Boolean).join(' / ')||'Único')+(producto.descripcion?' · '+producto.descripcion:'');
+      const codigo=codigoBarras(variante,producto);
       return `<article class="price-label">
         <div class="price-label-name">${escaparHTML(producto.nombre)}</div>
         <div class="price-label-variant">${escaparHTML(varianteTexto)}</div>
-        <div class="price-label-barcode">${variante.codigo ? code128Svg(variante.codigo,'6mm') : ''}<span>${escaparHTML(variante.codigo||'SIN CLAVE')}</span></div>
+        <div class="price-label-barcode">${codigo ? code128Svg(codigo,'6mm') : ''}<span>${escaparHTML(codigo||'SIN CLAVE')}</span></div>
         <div class="price-label-prices">
           <span>Efectivo / transferencia<br><strong>${money(precio)}</strong></span>
           <span>Débito<br><strong>${money(precioDebito)}</strong></span>
@@ -1955,7 +1967,7 @@ function renderProductoCard(p){
     ` : ''}
     ${p.variantes.length===0 ? '<p class="empty">Sin variantes cargadas todavía.</p>' : variantesOrdenadas.map(v=>`
       <div class="variant-row">
-        <span class="vlabel">${v.talle||'-'} ${v.color?('· '+v.color):''} ${v.codigo?`<span class="pill mid" style="margin-left:4px;">${v.codigo}</span>`:''}</span>
+        <span class="vlabel">${v.talle||'-'} ${v.color?('· '+v.color):''} ${v.codigo?`<span class="pill mid" title="Clave de catálogo" style="margin-left:4px;">SKU ${escaparHTML(v.codigo)}</span>`:''} ${codigoBarras(v,p)!==v.codigo?`<span class="pill ok" title="Código que lee el escáner">Lector ${escaparHTML(codigoBarras(v,p))}</span>`:''}</span>
         <span class="pill ${v.stock<=0?'low':v.stock<=LOW_STOCK?'mid':'ok'}">${v.stock}</span>
         <div class="stepper">
           <button onclick="ajustarStock('${p.id}','${v.id}',-1)">−</button>
@@ -1969,13 +1981,6 @@ function renderProductoCard(p){
         <div class="field" style="flex:1 1 90px;"><label>Talles</label><input type="text" value="${nuevaVariante.talle}" oninput="nuevaVariante.talle=this.value" placeholder="1,2,3 o S,M,L"></div>
         <div class="field" style="flex:1 1 90px;"><label>Colores</label><input type="text" value="${nuevaVariante.color}" oninput="nuevaVariante.color=this.value" placeholder="Negro, Blanco..."></div>
         <div class="field" style="flex:1 1 70px;"><label>Cantidad (c/u)</label><input type="number" min="1" value="${nuevaVariante.stock||1}" oninput="nuevaVariante.stock=this.value"></div>
-        <div class="field" style="flex:1 1 120px;">
-          <label>Clave base (opcional)</label>
-          <div style="display:flex;gap:4px;">
-            <input type="text" value="${nuevaVariante.codigo}" oninput="nuevaVariante.codigo=this.value" placeholder="Ej: REM-SAK-1">
-            <button class="btn small ghost" title="Generar clave categoría-nombre-color-talle" onclick="generarClaveVarianteForm('${p.id}')">Generar clave</button>
-          </div>
-        </div>
         <div class="field" style="flex:0 0 auto;justify-content:flex-end;">
           <div style="display:flex;gap:6px;"><button class="btn small primary" onclick="guardarVariante('${p.id}')">Agregar</button><button class="btn small ghost" onclick="addVarianteFormFor=null; renderAll();">Cancelar</button></div>
         </div>
@@ -2020,9 +2025,52 @@ function codigoUnicoEnCatalogo(codigo, producto){
 function buscarProductoPorNombre(nombre, descripcion){
   const n = (nombre||'').trim().toLowerCase(), d = (descripcion||'').trim().toLowerCase();
   if(d) return state.productos.find(p=>p.nombre.toLowerCase()===n && (p.descripcion||'').trim().toLowerCase()===d);
-  return state.productos.find(p=>p.nombre.toLowerCase()===n);
+  const mismos = state.productos.filter(p=>p.nombre.toLowerCase()===n);
+  return mismos.find(p=>!(p.descripcion||'').trim()) || (mismos.length===1 ? mismos[0] : undefined);
 }
-function sugerirCodigoVariante(nombre, talle, color='', categoria=''){
+/* true si hay varias prendas con ese nombre y sin descripción no se sabe a cuál sumar */
+function nombreAmbiguo(nombre, descripcion){
+  if((descripcion||'').trim()) return false;
+  const n = (nombre||'').trim().toLowerCase();
+  const mismos = state.productos.filter(p=>p.nombre.toLowerCase()===n);
+  return mismos.length>1 && !mismos.some(p=>!(p.descripcion||'').trim());
+}
+/* La clave SIEMPRE se genera sola; nadie puede escribirla ni cambiarla. */
+function claveAutomatica(producto, talle, color){
+  return codigoUnicoEnCatalogo(sugerirCodigoVariante(producto.nombre, talle, color, producto.categoria, producto).trim().toUpperCase(), producto);
+}
+/* Misma variante = mismo talle y mismo color (la clave puede repetirse entre talles). */
+function mismaTalleColor(v, talle, color){
+  return (v.talle||'').toLowerCase()===(talle||'').toLowerCase() && (v.color||'').toLowerCase()===(color||'').toLowerCase();
+}
+/* El SKU puede ser común a varios talles; el valor escaneable agrega el talle para identificar la variante exacta. */
+function codigoBarras(variante, producto){
+  const codigo=(variante.codigo||'').trim();
+  if(!codigo||!producto||!producto.num)return codigo;
+  const talle=(variante.talle||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9]/g,'')||'U';
+  return codigo+'-'+talle;
+}
+/* Variantes cuya clave coincide exacta con lo escaneado/escrito. Si hay una sola con stock (o una sola en total) se elige sola; si hay varios talles, se elige la prenda y se deja elegir el talle. */
+function coincidenciasClaveExacta(term){
+  const t = (term||'').trim().toLowerCase();
+  if(!t) return [];
+  return state.productos.flatMap(p=>p.variantes.filter(v=>(v.codigo||'').toLowerCase()===t || codigoBarras(v,p).toLowerCase()===t).map(v=>({p,v})));
+}
+function resolverClaveExacta(term){
+  const todas = coincidenciasClaveExacta(term);
+  if(!todas.length) return null;
+  const conStock = todas.filter(({v})=>Number(v.stock)>0);
+  const unica = todas.length===1 ? todas[0] : (conStock.length===1 ? conStock[0] : null);
+  return {p: todas[0].p, v: unica ? unica.v : null};
+}
+/* Número único y permanente por prenda (001, 002...). Nunca se reutiliza, aunque se borre una prenda. */
+function nuevoNumeroProducto(){
+  let base = Number(state.contadorProductos)||0;
+  state.productos.forEach(p=>{ if(Number(p.num)>base) base = Number(p.num); });
+  state.contadorProductos = base+1;
+  return base+1;
+}
+function sugerirCodigoVariante(nombre, talle, color='', categoria='', producto=null){
   const categoriaLimpia = normalizarClave(categoria);
   const categoriaCodigo = categoriaLimpia.slice(0,3);
   const palabras = (nombre||'').trim().split(/\s+/).filter(Boolean);
@@ -2031,7 +2079,10 @@ function sugerirCodigoVariante(nombre, talle, color='', categoria=''){
   const colorCodigo = normalizarClave(color).slice(0,3);
   const talleNormalizado = normalizarClave(talle);
   const talleCodigo = /^\d+$/.test(talleNormalizado) ? talleNormalizado.padStart(2,'0') : talleNormalizado;
-  return [categoriaCodigo || normalizarClave(palabras[0]).slice(0,3), nombreCodigo, colorCodigo, talleCodigo].filter(Boolean).join('-');
+  const numCodigo = (producto && Number(producto.num)>0) ? String(producto.num).padStart(3,'0') : '';
+  /* Prendas con número: la clave identifica prenda + color (todos los talles comparten clave).
+     Prendas viejas (sin número) conservan el talle en la clave para no romper etiquetas ya impresas. */
+  return [categoriaCodigo || normalizarClave(palabras[0]).slice(0,3), nombreCodigo, numCodigo, colorCodigo, numCodigo ? '' : talleCodigo].filter(Boolean).join('-');
 }
 function iniciarEdicionProducto(id){
   const producto = state.productos.find(p=>p.id===id);
@@ -2065,7 +2116,7 @@ function crearProducto(){
   if(!nuevoProd.nombre.trim()){ showToast('Ponele un nombre al producto'); return; }
   const nuevoProdNombreLog = nuevoProd.nombre.trim()+' · precio '+money(Number(nuevoProd.precio)||0);
   state.productos.push({
-    id: uid(), nombre: nuevoProd.nombre.trim(), descripcion: nuevoProd.descripcion.trim(),
+    id: uid(), num: nuevoNumeroProducto(), nombre: nuevoProd.nombre.trim(), descripcion: nuevoProd.descripcion.trim(),
     categoria: nuevoProd.categoria, costo: session==='admin' ? (Number(nuevoProd.costo)||0) : 0, precio: Number(nuevoProd.precio)||0, variantes: []
   });
   save();
@@ -2085,9 +2136,10 @@ function guardarCargaRapidaStock(){
   const nombre = nuevoProd.nombre.trim();
   if(!nombre){ showToast('Escribí el nombre de la prenda'); return; }
   const categoria = nuevoProd.categoria || state.config.categorias[0] || 'Otros';
+  if(nombreAmbiguo(nombre, nuevoProd.descripcion)){ showToast('Hay varias "'+nombre+'". Escribí la descripción para saber a cuál sumar'); return; }
   let producto = buscarProductoPorNombre(nombre, nuevoProd.descripcion);
   if(!producto){
-    producto = {id:uid(), nombre, descripcion:nuevoProd.descripcion.trim(), categoria, costo: session==='admin' ? (Number(nuevoProd.costo)||0) : 0, precio:Number(nuevoProd.precio)||0, variantes:[]};
+    producto = {id:uid(), num:nuevoNumeroProducto(), nombre, descripcion:nuevoProd.descripcion.trim(), categoria, costo: session==='admin' ? (Number(nuevoProd.costo)||0) : 0, precio:Number(nuevoProd.precio)||0, variantes:[]};
     state.productos.push(producto);
   }else{
     if(nuevoProd.descripcion.trim()) producto.descripcion = nuevoProd.descripcion.trim();
@@ -2100,12 +2152,10 @@ function guardarCargaRapidaStock(){
   const colores = (nuevaVariante.color.trim()||'').split(/[,;]+/).map(x=>x.trim()).filter(Boolean);
   const coloresFinales = colores.length ? colores : [''];
   const cantidad = Math.max(1, parseInt(nuevaVariante.stock)||0);
-  const codigoBase = (nuevaVariante.codigo||'').trim().toUpperCase();
   let agregadas = 0;
   talles.forEach(talle=>coloresFinales.forEach(color=>{
-    const tienePlantilla = codigoBase.includes('{TALLE}') || codigoBase.includes('{COLOR}');
-    const codigo = codigoUnicoEnCatalogo(codigoBase ? (tienePlantilla ? codigoBase.replace('{TALLE}',talle.toUpperCase()).replace('{COLOR}',color.toUpperCase()) : codigoBase+'-'+talle.toUpperCase()+(color?'-'+color.toUpperCase():'')) : sugerirCodigoVariante(producto.nombre,talle,color,categoria), producto);
-    let variante = producto.variantes.find(v=>v.codigo===codigo || (!codigo && v.talle.toLowerCase()===talle.toLowerCase() && v.color.toLowerCase()===color.toLowerCase()));
+    const codigo = claveAutomatica(producto, talle, color);
+    let variante = producto.variantes.find(v=>mismaTalleColor(v,talle,color));
     if(!variante){ variante={id:uid(),talle,color,codigo,stock:0}; producto.variantes.push(variante); }
     variante.stock += cantidad;
     registrarEtiquetasPendientes(variante.id,cantidad);
@@ -2137,14 +2187,6 @@ function eliminarProducto(id){
   showToast('Producto eliminado');
 }
 function dividirLista(txt){ return (txt||'').split(/[,;]+/).map(x=>x.trim()).filter(Boolean); }
-function generarClaveVarianteForm(prodId){
-  const p = state.productos.find(p=>p.id===prodId);
-  if(!p) return;
-  const talles = dividirLista(nuevaVariante.talle), colores = dividirLista(nuevaVariante.color);
-  if(talles.length>1 || colores.length>1){ showToast('Con varios talles/colores la clave se genera sola para cada uno'); return; }
-  nuevaVariante.codigo = sugerirCodigoVariante(p.nombre, talles[0]||'Único', colores[0]||'', p.categoria);
-  renderAll();
-}
 /* Acepta varios talles y/o colores separados por coma: crea una variante por cada combinación. */
 function guardarVariante(prodId){
   const p = state.productos.find(p=>p.id===prodId);
@@ -2154,18 +2196,11 @@ function guardarVariante(prodId){
   const colores = dividirLista(nuevaVariante.color);
   const coloresFinales = colores.length ? colores : [''];
   const cantidad = Math.max(1, Math.floor(Number(nuevaVariante.stock))||1);
-  const codigoBase = (nuevaVariante.codigo||'').trim().toUpperCase();
-  const combinaciones = talles.length*coloresFinales.length;
+  const combinaciones = talles.length * coloresFinales.length;
   let nuevas = 0, sumadas = 0;
   talles.forEach(talle=>coloresFinales.forEach(color=>{
-    const tienePlantilla = codigoBase.includes('{TALLE}') || codigoBase.includes('{COLOR}');
-    let codigo;
-    if(!codigoBase) codigo = sugerirCodigoVariante(p.nombre,talle,color,p.categoria).trim().toUpperCase();
-    else if(tienePlantilla) codigo = codigoBase.replace('{TALLE}',talle.toUpperCase()).replace('{COLOR}',color.toUpperCase());
-    else if(combinaciones===1) codigo = codigoBase;
-    else codigo = codigoBase+'-'+talle.toUpperCase()+(color?'-'+color.toUpperCase():'');
-    codigo = codigoUnicoEnCatalogo(codigo, p);
-    const existente = p.variantes.find(v=>(v.codigo && v.codigo===codigo) || ((v.talle||'').toLowerCase()===talle.toLowerCase() && (v.color||'').toLowerCase()===color.toLowerCase()));
+    const codigo = claveAutomatica(p, talle, color);
+    const existente = p.variantes.find(v=>mismaTalleColor(v,talle,color));
     if(existente){
       existente.stock += cantidad;
       registrarEtiquetasPendientes(existente.id,cantidad);
@@ -2537,8 +2572,8 @@ function buscarCambioConEnter(event){
   event.preventDefault();
   const termino=normalizarClave(devCambioSearch);
   const coincidencias=resultadosBusquedaCambio();
-  const exacta=coincidencias.find(({variante})=>normalizarClave(variante.codigo||'')===termino);
-  if(exacta)seleccionarPrendaCambio(exacta.producto.id,exacta.variante.id);
+  const exactas=coincidencias.filter(({variante})=>normalizarClave(variante.codigo||'')===termino && variante.stock>0);
+  if(exactas.length===1)seleccionarPrendaCambio(exactas[0].producto.id,exactas[0].variante.id);
 }
 function seleccionarPrendaCambio(productoId,varianteId){
   const producto=state.productos.find(p=>p.id===productoId);
@@ -3081,7 +3116,6 @@ function renderCompras(){
       <div class="field"><label>Talle</label><input type="text" placeholder="1, 2, 3" value="${compraRapida.talle}" oninput="compraRapida.talle=this.value"></div>
       <div class="field"><label>Color</label><input type="text" placeholder="Negro / Blanco" value="${compraRapida.color}" oninput="compraRapida.color=this.value"></div>
       <div class="field" style="max-width:100px;"><label>Cantidad</label><input type="number" min="1" value="${compraRapida.cantidad}" oninput="compraRapida.cantidad=this.value"></div>
-      <div class="field" style="flex:1 1 150px;"><label>Clave (opcional)</label><input type="text" placeholder="REM-COR-1-N" value="${compraRapida.codigo}" oninput="compraRapida.codigo=this.value"></div>
     </div>
     <div class="row">
       <div class="field" style="flex:2 1 220px;"><label>Descripción / diseño (opcional)</label><input type="text" placeholder="Ej: bordado Corteiz" value="${compraRapida.descripcion}" oninput="compraRapida.descripcion=this.value"></div>
@@ -3141,9 +3175,10 @@ function agregarCompraRapida(){
   if(!nombre){ showToast('Escribí el nombre de la prenda'); return; }
   const cantidad = Math.max(1, parseInt(compraRapida.cantidad)||0);
   const categoria = compraRapida.categoria || state.config.categorias[0] || 'Otros';
+  if(nombreAmbiguo(nombre, compraRapida.descripcion)){ showToast('Hay varias "'+nombre+'". Escribí la descripción para saber a cuál sumar'); return; }
   let producto = buscarProductoPorNombre(nombre, compraRapida.descripcion);
   if(!producto){
-    producto = {id:uid(), nombre, descripcion:compraRapida.descripcion.trim(), categoria, costo:Number(compraRapida.costo)||0, precio:Number(compraRapida.precio)||0, variantes:[]};
+    producto = {id:uid(), num:nuevoNumeroProducto(), nombre, descripcion:compraRapida.descripcion.trim(), categoria, costo:Number(compraRapida.costo)||0, precio:Number(compraRapida.precio)||0, variantes:[]};
     state.productos.push(producto);
   }else{
     if(compraRapida.descripcion.trim()) producto.descripcion = compraRapida.descripcion.trim();
@@ -3155,11 +3190,9 @@ function agregarCompraRapida(){
   const talles = (compraRapida.talle.trim() || 'Único').split(/[,;]+/).map(x=>x.trim()).filter(Boolean);
   const colores = (compraRapida.color.trim() || '').split(/[,;]+/).map(x=>x.trim()).filter(Boolean);
   const coloresFinales = colores.length ? colores : [''];
-  const codigoBase = compraRapida.codigo.trim().toUpperCase();
   talles.forEach(talle=>coloresFinales.forEach(color=>{
-    const tienePlantilla = codigoBase.includes('{TALLE}') || codigoBase.includes('{COLOR}');
-    const codigoGenerado = codigoUnicoEnCatalogo(codigoBase ? (tienePlantilla ? codigoBase.replace('{TALLE}', talle.toUpperCase()).replace('{COLOR}', color.toUpperCase()) : codigoBase+'-'+talle.toUpperCase()+(color?'-'+color.toUpperCase():'')) : sugerirCodigoVariante(producto.nombre, talle, color, categoria), producto);
-    let variante = producto.variantes.find(v=>codigoGenerado ? v.codigo===codigoGenerado : v.talle.toLowerCase()===talle.toLowerCase() && v.color.toLowerCase()===color.toLowerCase());
+    const codigoGenerado = claveAutomatica(producto, talle, color);
+    let variante = producto.variantes.find(v=>mismaTalleColor(v,talle,color));
     if(!variante){ variante = {id:uid(), talle, color, codigo:codigoGenerado, stock:0}; producto.variantes.push(variante); }
     const existente = compraLineas.find(l=>l.varianteId===variante.id);
     if(existente) existente.cantidad += cantidad;
@@ -3427,16 +3460,16 @@ function importarStockExcel(event){
         if(!nombre) return;
         const categoria = textoExcel(valorColumna(row,['categoria','categoría'])) || 'Otros';
         const descripcion = textoExcel(valorColumna(row,['descripcion','descripción']));
-        const codigo = textoExcel(valorColumna(row,['codigo','código'])).toUpperCase();
+        let codigo = ''; /* la clave siempre se genera sola; se ignora la columna del Excel */
         const talle = textoExcel(valorColumna(row,['talle','talla'])) || 'Único';
         const color = textoExcel(valorColumna(row,['color']));
         const stockTexto = valorColumna(row,['stock','cantidad']);
         const stock = Math.max(0, Number(stockTexto)||0);
         const costoTexto = valorColumna(row,['costo','costo unitario']);
         const precioTexto = valorColumna(row,['precio','precio de venta']);
-        let producto = state.productos.find(p=>p.nombre.toLowerCase()===nombre.toLowerCase());
+        let producto = buscarProductoPorNombre(nombre, descripcion);
         if(!producto){
-          producto = {id:uid(), nombre, descripcion, categoria, costo:Number(costoTexto)||0, precio:Number(precioTexto)||0, variantes:[]};
+          producto = {id:uid(), num:nuevoNumeroProducto(), nombre, descripcion, categoria, costo:Number(costoTexto)||0, precio:Number(precioTexto)||0, variantes:[]};
           state.productos.push(producto); creadas++;
         }else{
           if(descripcion) producto.descripcion = descripcion;
@@ -3445,8 +3478,9 @@ function importarStockExcel(event){
           if(precioTexto!=='') producto.precio = Number(precioTexto)||0;
         }
         if(!state.config.categorias.some(c=>c.toLowerCase()===categoria.toLowerCase())) state.config.categorias.push(categoria);
-        let variante = producto.variantes.find(v=>codigo ? v.codigo===codigo : v.talle.toLowerCase()===talle.toLowerCase() && v.color.toLowerCase()===color.toLowerCase());
+        let variante = producto.variantes.find(v=>mismaTalleColor(v,talle,color));
         if(!variante){
+          if(!codigo) codigo = codigoUnicoEnCatalogo(sugerirCodigoVariante(producto.nombre,talle,color,producto.categoria,producto).toUpperCase(), producto);
           variante = {id:uid(), talle, color, codigo, stock};
           producto.variantes.push(variante);
           registrarEtiquetasPendientes(variante.id,stock);
@@ -3485,6 +3519,7 @@ function importarDatos(event){
       }
       if(!data.etiquetasPendientes || typeof data.etiquetasPendientes!=='object') data.etiquetasPendientes = {};
       if(!Array.isArray(data.movimientos)) data.movimientos = [];
+      if(!data.contadorProductos) data.contadorProductos = data.productos.reduce((m,p)=>Math.max(m,Number(p.num)||0),0);
       state = data;
       registrarMovimiento('Copia importada','Se restauraron los datos desde un archivo de copia');
       save();
