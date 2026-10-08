@@ -1,109 +1,81 @@
-# Zero Zed · Control de local
+# Zero Zed · Control de local (versión modular)
 
-Aplicación web de **un solo archivo HTML** para gestionar un local de ropa: ventas, stock, turnos, devoluciones, compras para reventa y reportes. Funciona 100 % en el navegador, sin servidor ni instalación.
-# Zero Zed · Control de local
+> ## ⚠️ IMPORTANTE — leer primero
+>
+> **1. Faltan funciones de la V3.** Esta versión es la división de tu V2 y todavía no tiene:
+> - el login por **usuario** (en vez de email),
+> - el envío al contador **solo por WhatsApp**,
+> - los ajustes de stock **sin pisarse entre dispositivos**,
+> - el **aviso sin conexión**,
+> - el botón **"borrar todo"**.
+>
+> El SQL (`backend/zero-zed-supabase-completo.sql`) ya soporta varias de ellas. Se pueden aplicar sobre esta estructura modular y es más fácil, porque cada una cae en un solo archivo (login → `data/auth.js` y `modules/login.js`; WhatsApp → `modules/facturas.js`; stock → `modules/stock.js` y `data/supabase.js`; aviso sin conexión → `ui/cabecera.js`; borrar todo → `modules/datos.js` y `modules/ajustes.js`).
+>
+> **2. Rediseño pendiente.** El rediseño de la interfaz y el "mostrar más" de **Devoluciones** e **Historial** (que hoy se ve al costado y queda feo) quedan para cuando lo indiques.
 
-Aplicación web de **un solo archivo HTML** para gestionar un local de ropa: ventas, stock, turnos, devoluciones, compras para reventa y reportes. Funciona 100 % en el navegador, sin servidor ni instalación.
 
-> Esta es la versión **LOCAL**: los datos se guardan en el `localStorage` del navegador. Una versión conectada a base de datos (nube) está planeada para más adelante.
+Es **el mismo programa** que tu `Zero_Zed_Control_de_local_NUBE---V2.html`, pero repartido en archivos.
+No cambió ninguna función: solo se movió el código de lugar.
 
-## Funciones
+> **Cumplimiento legal:** completá `legal/datos-negocio.js` y leé `LEEME_CUMPLIMIENTO.md` (qué se hizo, qué falta y qué consultar con un profesional).
 
-- **Turno**: apertura y cierre de caja, efectivo en caja, gastos del turno.
-- **Vender**: búsqueda por clave o nombre, carrito, varios métodos de pago con recargos configurables (débito / crédito).
-- **Stock**: productos con talles y colores, categorías, alertas de stock bajo, planilla de stock e importación/exportación por Excel.
-- **Etiquetas**: generación de etiquetas en PDF para prendas nuevas.
-- **Devoluciones y cambios**: por venta o manual.
-- **Compras**: compras para reventa e historial.
-- **Historial**: ventas por día, más vendido, ganancia diaria y mensual, exportación a Excel.
-- **Ajustes**: datos del local, categorías, recargos, PIN de acceso y copia de seguridad.
-- **Roles**: Administrador y Empleado, cada uno con su PIN.
-- Tema claro/oscuro.
+## Cómo abrirlo
+Abrí `index.html` en el navegador (doble clic). Tiene que estar toda la carpeta junta.
+Para subirlo a internet (Netlify, GitHub Pages, etc.) subí la carpeta completa.
 
-## Cómo usarla
-
-1. Descargá `Zero_Zed_Control_de_local-V2.html`.
-2. Abrilo con doble clic en Chrome, Edge o Firefox.
-3. Ingresá con el PIN de administrador o de empleado.
-
-> **Cambiá los PINs por defecto** en *Ajustes* apenas la abras por primera vez.
-
-## Copias de seguridad (importante)
-
-Los datos viven en el navegador, atados al archivo y a su ubicación. Si borrás los datos del navegador o cambiás el archivo de carpeta, podés perderlos.
-
-- Descargá una copia desde *Ajustes → Copia de seguridad* con frecuencia.
-- Para actualizar la aplicación: descargá la copia, abrí el HTML nuevo **desde la misma carpeta y con el mismo nombre**, y si aparece vacío, cargá la copia desde *Ajustes*.
-
-## Tecnologías
-
-- HTML, CSS y JavaScript puro (sin frameworks, sin paso de compilación).
-- [SheetJS (xlsx)](https://sheetjs.com/) para Excel y [jsPDF](https://github.com/parallax/jsPDF) para PDF, cargadas desde CDN.
-- Fuentes de Google Fonts.
-
-Como usa librerías por CDN, **necesita internet** para exportar a Excel/PDF y para cargar las fuentes.
-
-## Estructura del repositorio
-
+## Estructura
 ```
-.
-├── Zero_Zed_Control_de_local-V2.html   # toda la aplicación
-├── README.md
-├── requirements.txt                     # dependencias (informativo)
-└── .gitignore
+zero-zed/
+├─ index.html                 ← estructura de la pantalla + lista de archivos que se cargan
+├─ legal/                     ← políticas (privacidad, cookies, términos, cambios) y datos del negocio
+├─ LEEME_CUMPLIMIENTO.md      ← checklist de cumplimiento y accesibilidad
+├─ frontend/                  ← LO QUE VE EL USUARIO
+│  ├─ css/                    ← estilos (01 a 11, el orden importa)
+│  └─ js/
+│     ├─ core/                ← base: constantes, utilidades, estado, reglas comunes
+│     ├─ data/                ← CONEXIÓN CON EL BACKEND (Supabase): datos y sesión
+│     ├─ ui/                  ← cabecera, navegación, avisos, render principal
+│     ├─ modules/             ← una pestaña = un archivo
+│     └─ app/inicio.js        ← arranque de la app (se carga al final)
+└─ backend/
+   └─ zero-zed-supabase-completo.sql  ← base de datos de Supabase (SQL completo, se pega en el SQL Editor)
 ```
 
-## Licencia
+## ¿Dónde busco si algo falla?
+| Si falla... | Mirá este archivo |
+|---|---|
+| No guarda / no carga datos, "Sin conexión" | `frontend/js/data/supabase.js` |
+| Login, cierre de sesión | `frontend/js/data/auth.js` y `modules/login.js` |
+| Pestaña Resumen (gráficos, ganancia) | `modules/resumen.js` |
+| Vender, carrito, pago dividido | `modules/vender.js` |
+| Stock, talles, colores, carga rápida | `modules/stock.js` |
+| Etiquetas / código de barras | `modules/etiquetas.js` |
+| Lector de códigos al vender, buscadores | `modules/busqueda.js` |
+| Devoluciones y cambios | `modules/devoluciones.js` |
+| Turno y caja | `modules/turno.js` |
+| Historial y exportar ventas del día | `modules/historial.js` |
+| Facturas / WhatsApp al contador | `modules/facturas.js` |
+| Compras | `modules/compras.js` |
+| Ajustes, categorías, registro de movimientos | `modules/ajustes.js` |
+| Copia de seguridad, Excel, borrar todo | `modules/datos.js` |
+| Recibo / comprobante | `modules/comprobante.js` |
+| Accesibilidad (etiquetas, teclado) | `ui/accesibilidad.js`, `css/12-accesibilidad.css` |
+| Aviso de almacenamiento / pie legal | `ui/aviso-almacenamiento.js`, `index.html` |
+| Textos legales, datos del negocio | `legal/` |
+| Pestañas, menú "Más", cabecera, modo claro/oscuro | `ui/navegacion.js`, `ui/cabecera.js` |
+| La pantalla no se redibuja bien | `ui/render.js` |
+| Algo no se ve bien (colores, tamaños) | `frontend/css/` (07 tema, 10 celular, 11 etiquetas) |
+| Error en la base de datos / permisos | `backend/zero-zed-supabase-completo.sql` (ver abajo) |
 
-Proyecto personal. Definí acá la licencia que prefieras (por ejemplo MIT) o dejalo como "todos los derechos reservados".
-> Esta es la versión **LOCAL**: los datos se guardan en el `localStorage` del navegador. Una versión conectada a base de datos (nube) está planeada para más adelante.
+Tip: abrí la consola del navegador (F12). El error indica el archivo y la línea.
 
-## Funciones
+## Orden de carga (importa)
+`index.html` carga los archivos JS en este orden: core → data → ui → modules → app/inicio.js.
+Si agregás un archivo nuevo, ponelo en `index.html` **antes** de `app/inicio.js`.
+Los archivos comparten variables y funciones entre sí (no son "módulos aislados"), por eso el orden es importante.
 
-- **Turno**: apertura y cierre de caja, efectivo en caja, gastos del turno.
-- **Vender**: búsqueda por clave o nombre, carrito, varios métodos de pago con recargos configurables (débito / crédito).
-- **Stock**: productos con talles y colores, categorías, alertas de stock bajo, planilla de stock e importación/exportación por Excel.
-- **Etiquetas**: generación de etiquetas en PDF para prendas nuevas.
-- **Devoluciones y cambios**: por venta o manual.
-- **Compras**: compras para reventa e historial.
-- **Historial**: ventas por día, más vendido, ganancia diaria y mensual, exportación a Excel.
-- **Ajustes**: datos del local, categorías, recargos, PIN de acceso y copia de seguridad.
-- **Roles**: Administrador y Empleado, cada uno con su PIN.
-- Tema claro/oscuro.
+## Backend (Supabase) — `backend/zero-zed-supabase-completo.sql`
+Es **tu SQL completo y actualizado**, en un solo archivo: tablas, permisos (RLS), funciones, ventas, facturas, auditoría y endurecimiento.
+Se puede volver a ejecutar sin romper datos existentes.
 
-## Cómo usarla
-
-1. Descargá `Zero_Zed_Control_de_local-V2.html`.
-2. Abrilo con doble clic en Chrome, Edge o Firefox.
-3. Ingresá con el PIN de administrador o de empleado.
-
-> **Cambiá los PINs por defecto** en *Ajustes* apenas la abras por primera vez.
-
-## Copias de seguridad (importante)
-
-Los datos viven en el navegador, atados al archivo y a su ubicación. Si borrás los datos del navegador o cambiás el archivo de carpeta, podés perderlos.
-
-- Descargá una copia desde *Ajustes → Copia de seguridad* con frecuencia.
-- Para actualizar la aplicación: descargá la copia, abrí el HTML nuevo **desde la misma carpeta y con el mismo nombre**, y si aparece vacío, cargá la copia desde *Ajustes*.
-
-## Tecnologías
-
-- HTML, CSS y JavaScript puro (sin frameworks, sin paso de compilación).
-- [SheetJS (xlsx)](https://sheetjs.com/) para Excel y [jsPDF](https://github.com/parallax/jsPDF) para PDF, cargadas desde CDN.
-- Fuentes de Google Fonts.
-
-Como usa librerías por CDN, **necesita internet** para exportar a Excel/PDF y para cargar las fuentes.
-
-## Estructura del repositorio
-
-```
-.
-├── Zero_Zed_Control_de_local-V2.html   # toda la aplicación
-├── README.md
-├── requirements.txt                     # dependencias (informativo)
-└── .gitignore
-```
-
-## Licencia
-
-Proyecto personal. Definí acá la licencia que prefieras (por ejemplo MIT) o dejalo como "todos los derechos reservados".
+**Cómo se usa:** cuando haya que cambiar algo de la base, se modifica este archivo (se lo pedís a Claude), se copia **todo** su contenido y se pega en Supabase → SQL Editor → Run. Este archivo es la versión de referencia: guardalo siempre actualizado.

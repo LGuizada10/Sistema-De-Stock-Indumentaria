@@ -1,0 +1,41 @@
+/* [ZZ] 11-etiquetas.css — Etiquetas de precio, resultados de cambio e impresión. */
+  #labelPrintOverlay{display:none;}
+  #labelPrintOverlay.active{display:block;position:fixed;inset:0;z-index:100;background:var(--paper);color:var(--ink);overflow:auto;padding:16px;}
+  .label-print-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;max-width:1000px;margin:0 auto 16px;}
+  .label-grid{display:grid;grid-template-columns:repeat(3,62mm);gap:2mm;justify-content:center;}
+  .price-label{height:38mm;border:1px solid #25352B;border-radius:2mm;background:#FFFFFF;color:#101713;padding:2.5mm 3mm;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden;break-inside:avoid;}
+  .price-label-name{font:700 9pt var(--font-body);line-height:1.15;max-height:7.4mm;overflow:hidden;}
+  .price-label-variant{font:500 7.5pt var(--font-body);color:#435448;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .price-label-barcode{display:flex;flex-direction:column;align-items:center;gap:.3mm;flex:0 0 auto;}
+  .price-label-barcode svg{flex:0 0 auto;}
+  .price-label-barcode span{font:600 6.5pt var(--font-mono);letter-spacing:.3px;line-height:1;}
+  .price-label-prices{display:grid;grid-template-columns:1fr 1fr;column-gap:3mm;row-gap:.8mm;font:600 6.5pt var(--font-body);line-height:1.2;}
+  .price-label-prices strong{font:700 7.5pt var(--font-mono);}
+  /* Etiqueta rediseñada */
+  .price-label{padding:2.6mm 3.2mm 2.4mm;gap:.8mm;}
+  .price-label .price-label-name{font:700 9.5pt var(--font-display);letter-spacing:.3px;text-transform:uppercase;border-bottom:.2mm solid #D9E2DC;padding-bottom:.9mm;max-height:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .price-label .price-label-variant{font:500 7pt var(--font-body);color:#5A6B5F;}
+  .price-label .price-label-barcode{width:80%;align-self:center;gap:.6mm;}
+  .price-label .price-label-barcode svg{width:100%;}
+  .price-label .price-label-barcode span{font:500 6pt var(--font-mono);letter-spacing:1.6px;color:#2F3D34;}
+  .price-label .price-label-prices{display:grid;grid-template-columns:1.3fr 1fr 1fr;column-gap:1.5mm;text-align:center;border-top:.2mm solid #D9E2DC;padding-top:1mm;}
+  .price-label .price-label-prices span{display:flex;flex-direction:column;align-items:center;gap:.3mm;font:600 5pt var(--font-body);letter-spacing:.5px;text-transform:uppercase;color:#6B7A70;}
+  .price-label .price-label-prices strong{font:700 8.2pt var(--font-mono);letter-spacing:0;text-transform:none;color:#101713;}
+  .exchange-results{max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:7px;background:var(--paper);overscroll-behavior:contain;}
+  .exchange-result{display:flex;width:100%;align-items:center;justify-content:space-between;gap:12px;padding:9px 10px;border:0;border-bottom:1px solid var(--line-soft);background:transparent;color:var(--ink);text-align:left;cursor:pointer;}
+  .exchange-result:last-child{border-bottom:0;}
+  .exchange-result:hover,.exchange-result:focus-visible{background:color-mix(in srgb,var(--mustard) 12%,var(--paper));outline:none;}
+  .exchange-result-name{font-weight:700;}
+  .exchange-result-meta{display:block;margin-top:2px;font-size:12px;color:var(--ink-soft);}
+  .exchange-result-code{font:600 12px var(--font-mono);color:var(--mustard);white-space:nowrap;}
+  .exchange-selected{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:7px;padding:8px 10px;border:1px solid var(--mustard);border-radius:7px;background:color-mix(in srgb,var(--mustard) 10%,var(--card));}
+  .exchange-empty{padding:9px 10px;color:var(--ink-soft);font-size:12.5px;}
+  @media print{
+    @page{size:A4;margin:8mm;}
+    body.labels-printing{background:#FFFFFF !important;color:#101713 !important;}
+    body.labels-printing #app,body.labels-printing #receiptOverlay,body.labels-printing .toast{display:none !important;}
+    body.labels-printing #labelPrintOverlay{display:block !important;position:static;overflow:visible;padding:0;background:#FFFFFF;color:#101713;}
+    body.labels-printing .label-print-toolbar{display:none !important;}
+    body.labels-printing .label-grid{grid-template-columns:repeat(3,62mm);gap:2mm;justify-content:start;}
+    body.labels-printing .price-label{print-color-adjust:exact;-webkit-print-color-adjust:exact;}
+  }

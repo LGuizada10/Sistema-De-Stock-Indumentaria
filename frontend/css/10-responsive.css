@@ -1,0 +1,56 @@
+/* [ZZ] 10-responsive.css — Adaptación a celular y reducción de movimiento. */
+  @media (max-width:760px){.summary-kpis{grid-template-columns:repeat(2,minmax(0,1fr));}.summary-grid{grid-template-columns:1fr;}.settings-grid{grid-template-columns:1fr;}}
+  @media (max-width:380px){.summary-kpi{padding:11px;}.summary-kpi-value{font-size:18px;}}
+  .cat-chip{background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:5px 8px 5px 12px;}
+  .cat-scroll-chip{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:7px 13px;}
+  .cat-scroll-chip.active{background:var(--mustard);color:var(--accent-contrast);border-color:var(--mustard);}
+  .sales-chart{border-bottom:1px solid var(--line);}
+  .sales-chart-bar{background:var(--mustard);border:0;border-radius:5px 5px 0 0;}
+  .login-card{border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);}
+  .stepper button{border:1px solid var(--line);border-radius:6px;}
+  @media (max-width:600px){
+    #app{padding:0 12px calc(152px + env(safe-area-inset-bottom));}
+    .hero{padding:10px 0;border-bottom:1px solid var(--line);}
+    .brand{gap:8px;}
+    .brand img{height:32px;}
+    .hero-title{font-size:17px;}
+    .hero-sub{display:none;}
+    .header-right{gap:7px;margin-left:auto;}
+    .status-tag{padding:5px 8px 5px 19px;font-size:10px;}
+    .status-tag::before{left:7px;width:6px;height:6px;}
+    .status-tag b{font-size:11px;}
+    .sync-tag{font-size:10px;margin-right:0;}
+    .mobile-tools-toggle{display:grid;place-items:center;width:38px;height:38px;border:1px solid var(--line);border-radius:8px;background:var(--paper-2);color:var(--ink);font-size:20px;cursor:pointer;}
+    .mobile-tools-menu{display:none;position:absolute;top:calc(100% + 7px);right:0;z-index:40;min-width:160px;padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--card);box-shadow:var(--shadow);}
+    .mobile-tools.open .mobile-tools-menu{display:grid;}
+    .mobile-tools-menu .theme-toggle,.mobile-tools-menu .logout-link{display:flex;align-items:center;justify-content:flex-start;width:100%;min-height:42px;padding:8px 10px;border:0;border-radius:6px;background:transparent;color:var(--ink);text-align:left;font-size:13px;text-decoration:none;}
+    .mobile-tools-menu .theme-toggle:hover,.mobile-tools-menu .logout-link:hover{background:var(--paper-2);}
+    nav.tabs{position:fixed;left:50%;right:auto;bottom:env(safe-area-inset-bottom);z-index:35;width:min(calc(100vw - 20px),520px);display:flex;flex-wrap:nowrap;justify-content:space-between;gap:3px;margin:0;padding:5px;transform:translateX(-50%);border:1px solid var(--line);border-radius:14px;background:var(--card);box-shadow:0 6px 24px rgba(0,0,0,.17);}
+    nav.tabs button{flex:1 1 0;min-width:0;min-height:48px;padding:6px 4px;border-radius:9px;font-size:11px;white-space:nowrap;}
+    nav.tabs button.active{background:var(--paper-2);}
+    .mobile-nav-label{display:block;font-size:10px;line-height:1.15;}
+    .nav-more-wrap{flex:1 1 0;}
+    .nav-more-wrap>button{width:100%;}
+    .nav-more-menu{top:auto;bottom:calc(100% + 8px);left:auto;right:0;min-width:190px;}
+    #btnConfirmarVenta.checkout-button{position:fixed;left:12px;right:12px;bottom:calc(66px + env(safe-area-inset-bottom));z-index:30;width:calc(100% - 24px);min-height:54px;border-radius:12px;font-size:16px;box-shadow:0 7px 20px rgba(0,0,0,.2);}
+    #resumenPagoVenta{padding-bottom:58px;}
+    .turno-cash-hero .summary-kpi-value{font-size:26px;}
+    .card{padding:12px;border-radius:9px;}
+    main{padding:17px 13px 20px;border-radius:10px;}
+    .summary-kpis{gap:7px;}
+    .summary-kpi{padding:11px;}
+    .talle{min-height:44px;}
+    .stepper button{width:38px;height:38px;}
+    .cart-table{font-size:11.5px;}
+    .cart-table th,.cart-table td{padding:6px 4px;overflow-wrap:anywhere;}
+    .cart-table th:nth-child(1){width:30%;}
+    .cart-table th:nth-child(2){width:27%;}
+    .cart-table th:nth-child(3){width:11%;}
+    .cart-table th:nth-child(4),.cart-table td:nth-child(4){display:none;}
+    .cart-table th:nth-child(5){width:20%;}
+    .cart-table th:nth-child(6){width:12%;}
+    .view-enter{animation-duration:.14s;}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *,*::before,*::after{scroll-behavior:auto !important;transition:none !important;}
+  }

@@ -1,0 +1,20 @@
+/* [ZZ] 05-comprobante.css — Comprobante / recibo e impresión del recibo. */
+  .receipt-wrap{display:flex;justify-content:center;padding:30px 12px;min-height:100vh;background:var(--paper);}
+  .receipt{background:#ffffff;color:#14181A;width:100%;max-width:340px;padding:22px 20px;border-radius:2px;box-shadow:var(--shadow);font-family:var(--font-mono);}
+  .receipt-head{text-align:center;margin-bottom:10px;}
+  .receipt-head img{height:38px;margin-bottom:6px;}
+  .receipt-head .rname{font-family:var(--font-display);font-weight:700;font-size:20px;letter-spacing:0.3px;}
+  .receipt-head .rmeta{font-size:11px;color:#5B6660;}
+  .receipt hr{border:none;border-top:1.5px dashed #14181A;margin:10px 0;}
+  .receipt table{width:100%;font-size:12px;border-collapse:collapse;}
+  .receipt table td{padding:3px 0;border:none;}
+  .receipt .rtotal{display:flex;justify-content:space-between;font-family:var(--font-display);font-weight:700;font-size:19px;margin-top:6px;}
+  .receipt .rline{display:flex;justify-content:space-between;font-size:12.5px;padding:2px 0;}
+  .receipt-foot{text-align:center;font-size:11px;color:#5B6660;margin-top:14px;}
+  .receipt-actions{display:flex;gap:8px;justify-content:center;margin-top:16px;}
+  @media print{
+    body{background:#fff !important;}
+    .no-print{display:none !important;}
+    .receipt-wrap{padding:0;min-height:auto;background:#fff;}
+    .receipt{box-shadow:none;max-width:100%;}
+  }

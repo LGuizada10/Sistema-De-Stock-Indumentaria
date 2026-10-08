@@ -1,0 +1,5 @@
+/* [ZZ] 06-login.css — Pantalla de login. */
+  .login-wrap{display:flex;justify-content:center;padding:40px 10px;}
+  .login-card{background:var(--card);border:2px solid var(--ink);border-radius:2px;padding:26px 24px;max-width:340px;width:100%;text-align:center;}
+  .role-btn{display:block;width:100%;margin-bottom:10px;}
+  .prod-desc{font-size:12px;color:var(--ink-soft);margin-top:-2px;}
