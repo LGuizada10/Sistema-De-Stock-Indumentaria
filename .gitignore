@@ -1,29 +1,37 @@
-# Copias de seguridad de datos (contienen ventas, costos y PINs del local)
+# Copias de seguridad y datos del negocio
 zero-zed-backup-*.json
 *backup*.json
 *.bak
- 
-# Exportaciones generadas por la app
+nuevo archivo/zero-zed-modular/migracion/migrar-zero-zed-*.sql
+
+# Archivos exportados o paquetes locales
 *.xlsx
 *.csv
 etiquetas*.pdf
- 
-# Claves y credenciales (para cuando subas la versión NUBE)
+*.zip
+Zero Zed*.html
+
+# Claves y configuración local
 .env
 .env.*
+!.env.example
 config.local.*
 secrets*
- 
-# Sistema operativo
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Sistema operativo y editores
 .DS_Store
 Thumbs.db
 desktop.ini
- 
-# Editores
 .vscode/
 .idea/
 *.swp
- 
-# Dependencias, por si en el futuro agregás herramientas
+
+# Dependencias y cachés
 node_modules/
 __pycache__/
+
+

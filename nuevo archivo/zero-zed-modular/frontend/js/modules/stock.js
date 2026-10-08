@@ -104,12 +104,38 @@ function renderFiltroCategorias(categorias){
   const lista = (stockCategoryFilter && !categorias.includes(stockCategoryFilter)) ? [...categorias, stockCategoryFilter] : categorias;
   const opciones = lista.map(c=>`<option value="${escaparHTML(c)}" ${stockCategoryFilter===c?'selected':''}>${escaparHTML(c)} (${conteo[c]||0})</option>`).join('');
   return `
-  <div class="field" style="max-width:300px;">
-    <label>Categoría</label>
-    <select onchange="stockCategoryFilter=this.value; renderAll();">
+  <div class="stk-field stk-field-cat">
+    <label for="stockCategoria">Categoría</label>
+    <select id="stockCategoria" onchange="stockCategoryFilter=this.value; renderAll();">
       <option value="">Todas las categorías (${state.productos.length})</option>
       ${opciones}
     </select>
+  </div>`;
+}
+/* Indicadores del inventario (arriba de la pestaña). El valor a costo solo lo ve el administrador. */
+function resumenStock(){
+  let unidades=0, sinStock=0, bajo=0, costo=0, venta=0;
+  state.productos.forEach(p=>{
+    p.variantes.forEach(v=>{
+      const s = Number(v.stock)||0;
+      unidades += s;
+      if(s<=0) sinStock++; else if(s<=LOW_STOCK) bajo++;
+      costo += s*(Number(p.costo)||0);
+      venta += s*(Number(p.precio)||0);
+    });
+  });
+  return {prendas:state.productos.length, unidades, sinStock, bajo, costo, venta};
+}
+function renderKpisStock(){
+  const r = resumenStock();
+  const kpi = (valor,rotulo,clase='')=>`<div class="stk-kpi ${clase}"><span class="stk-kpi-v num">${valor}</span><span class="stk-kpi-l">${rotulo}</span></div>`;
+  return `<div class="stk-kpis" role="group" aria-label="Resumen del inventario">
+    ${kpi(r.prendas,'Prendas')}
+    ${kpi(r.unidades,'Unidades en stock')}
+    ${kpi(r.bajo,'Con stock bajo', r.bajo?'warn':'')}
+    ${kpi(r.sinStock,'Variantes sin stock', r.sinStock?'bad':'')}
+    ${session==='admin' ? kpi(money(r.costo),'Valor a costo') : ''}
+    ${session==='admin' ? kpi(money(r.venta),'Valor a precio de venta') : ''}
   </div>`;
 }
 function renderStock(){
@@ -129,67 +155,53 @@ function renderStock(){
   }
 
   return `
-  <h2 class="section-title">Stock</h2>
-  <p class="section-note">Tus productos, talles/colores y cantidades disponibles.</p>
+  <div class="stk-head">
+    <div>
+      <h2 class="section-title" style="margin-bottom:2px;">Stock</h2>
+      <p class="section-note" style="margin:0;">Inventario por prenda, talle y color.</p>
+    </div>
+    <button class="btn primary" onclick="showNuevoProducto=!showNuevoProducto; renderAll();" aria-expanded="${showNuevoProducto}">${showNuevoProducto?'Cerrar carga':'+ Añadir prenda'}</button>
+  </div>
+  ${renderKpisStock()}
   ${renderCostosPendientes()}
   ${renderAlertasStock()}
-  <div class="row" style="margin-bottom:12px;">
-    ${state.etiquetasInicialesImpresas ? '' : `<button class="btn" onclick="imprimirEtiquetasStock('todas')">Imprimir todas (${contarEtiquetasStock()})</button>`}
-    <button class="btn primary" onclick="imprimirEtiquetasStock('nuevas')" ${contarEtiquetasPendientes()===0?'disabled':''}>Nuevas Etiquetas (${contarEtiquetasPendientes()})</button>
-  </div>
-
-  <div class="row" style="align-items:flex-end;margin-bottom:4px;">
-  <div class="field" style="max-width:340px;">
-    <label>Buscar por clave o nombre</label>
-    <input type="text" data-search="stock" placeholder="Ej: REM-SAK o jean..." value="${stockSearch}" aria-label="Buscar por clave o nombre" oninput="actualizarBusqueda('stock', this);" onkeydown="buscarClaveConEnter('stock', event, this);">
-  </div>
-  ${renderFiltroCategorias(categorias)}
-  </div>
-  <div id="stockClaveResultado">${renderHistorialClave(stockClaveConsultada)}</div>
-  <div style="height:8px;"></div>
-
-  <button class="btn primary" onclick="showNuevoProducto=!showNuevoProducto; renderAll();">${showNuevoProducto?'Cancelar':'+ Añadir prenda'}</button>
 
   ${showNuevoProducto ? `
-  <div class="card" style="margin-top:12px;">
+  <section class="card stk-form" aria-label="Carga rápida de prendas">
     <div class="card-title">Carga rápida de prendas</div>
-    <p class="section-note">Completá una variante por vez. Podés escribir varios talles o colores separados por coma, por ejemplo: 1,2,3.</p>
-    <div class="row">
-      <div class="field" style="flex:2 1 200px;">
-        <label>Prenda</label>
-        <input type="text" placeholder="Ej: Remera lisa Corteiz" value="${nuevoProd.nombre}" oninput="nuevoProd.nombre=this.value">
-      </div>
-      <div class="field">
-        <label>Categoría</label>
-        <select onchange="nuevoProd.categoria=this.value">
-          ${categorias.map(c=>`<option value="${c}" ${nuevoProd.categoria===c?'selected':''}>${c}</option>`).join('')}
+    <p class="section-note">Escribí varios talles o colores separados por coma (por ejemplo 1,2,3) y se crea una variante por cada combinación.</p>
+    <div class="stk-form-grid">
+      <div class="stk-field stk-span2"><label for="npNombre">Prenda</label><input id="npNombre" type="text" placeholder="Ej: Remera lisa Corteiz" value="${escaparHTML(nuevoProd.nombre)}" oninput="nuevoProd.nombre=this.value"></div>
+      <div class="stk-field"><label for="npCat">Categoría</label>
+        <select id="npCat" onchange="nuevoProd.categoria=this.value">
+          ${categorias.map(c=>`<option value="${escaparHTML(c)}" ${nuevoProd.categoria===c?'selected':''}>${escaparHTML(c)}</option>`).join('')}
         </select>
       </div>
-      <div class="field" style="flex:2 1 200px;">
-        <label>Descripción / diseño (opcional)</label>
-        <input type="text" placeholder="Ej: bolsillo cargo, estampa frontal..." value="${nuevoProd.descripcion}" oninput="nuevoProd.descripcion=this.value">
-      </div>
-      ${session === 'admin' ? `<div class="field">
-        <label>Costo unitario</label>
-        <input type="number" min="0" placeholder="0" value="${nuevoProd.costo}" oninput="nuevoProd.costo=this.value">
-      </div>` : ''}
-      <div class="field">
-        <label>Precio de venta</label>
-        <input type="number" min="0" placeholder="0" value="${nuevoProd.precio}" oninput="nuevoProd.precio=this.value">
-      </div>
+      <div class="stk-field stk-span2"><label for="npDesc">Descripción / diseño (opcional)</label><input id="npDesc" type="text" placeholder="Ej: bolsillo cargo, estampa frontal..." value="${escaparHTML(nuevoProd.descripcion)}" oninput="nuevoProd.descripcion=this.value"></div>
+      ${session === 'admin' ? `<div class="stk-field"><label for="npCosto">Costo unitario</label><input id="npCosto" type="number" min="0" placeholder="0" value="${escaparHTML(nuevoProd.costo)}" oninput="nuevoProd.costo=this.value"></div>` : ''}
+      <div class="stk-field"><label for="npPrecio">Precio de venta</label><input id="npPrecio" type="number" min="0" placeholder="0" value="${escaparHTML(nuevoProd.precio)}" oninput="nuevoProd.precio=this.value"></div>
+      <div class="stk-field"><label for="npTalles">Talles</label><input id="npTalles" type="text" placeholder="1,2,3 o S,M,L" value="${escaparHTML(nuevaVariante.talle)}" oninput="nuevaVariante.talle=this.value"></div>
+      <div class="stk-field"><label for="npColores">Colores</label><input id="npColores" type="text" placeholder="Negro,Blanco" value="${escaparHTML(nuevaVariante.color)}" oninput="nuevaVariante.color=this.value"></div>
+      <div class="stk-field"><label for="npCant">Cantidad (c/u)</label><input id="npCant" type="number" min="1" value="${nuevaVariante.stock||1}" oninput="nuevaVariante.stock=this.value"></div>
     </div>
-    <div class="row">
-      <div class="field"><label>Talles</label><input type="text" placeholder="1,2,3 o S,M,L" value="${nuevaVariante.talle}" oninput="nuevaVariante.talle=this.value"></div>
-      <div class="field"><label>Colores</label><input type="text" placeholder="Negro,Blanco" value="${nuevaVariante.color}" oninput="nuevaVariante.color=this.value"></div>
-      <div class="field" style="max-width:110px;"><label>Cantidad</label><input type="number" min="1" value="${nuevaVariante.stock||1}" oninput="nuevaVariante.stock=this.value"></div>
-    </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <div class="stk-actions">
       <button class="btn primary" onclick="guardarCargaRapidaStock()">Agregar al stock</button>
       <button class="btn ghost" onclick="cancelarNuevoProducto()">Cancelar</button>
     </div>
-  </div>` : ''}
+  </section>` : ''}
 
-  <hr class="stitch">
+  <div class="stk-toolbar" role="search">
+    <div class="stk-field stk-field-search">
+      <label for="stockBuscar">Buscar por clave o nombre</label>
+      <input id="stockBuscar" type="search" data-search="stock" placeholder="Ej: REM-SAK o jean..." value="${escaparHTML(stockSearch)}" autocomplete="off" oninput="actualizarBusqueda('stock', this);" onkeydown="buscarClaveConEnter('stock', event, this);">
+    </div>
+    ${renderFiltroCategorias(categorias)}
+    <div class="stk-toolbar-actions">
+      ${state.etiquetasInicialesImpresas ? '' : `<button class="btn" onclick="imprimirEtiquetasStock('todas')">Imprimir todas (${contarEtiquetasStock()})</button>`}
+      <button class="btn" onclick="imprimirEtiquetasStock('nuevas')" ${contarEtiquetasPendientes()===0?'disabled':''}>Etiquetas nuevas (${contarEtiquetasPendientes()})</button>
+    </div>
+  </div>
+  <div id="stockClaveResultado">${renderHistorialClave(stockClaveConsultada)}</div>
 
   <div id="stockSearchResults">${renderResultadosStock(productosFiltrados,categorias)}</div>
   `;
@@ -204,14 +216,19 @@ function renderResultadosStock(productosFiltrados,categorias){
     else sinCategoria.push(p);
   });
   const itemsLimitados = (items)=>items.slice(0, MAX_SEARCH_ITEMS);
-  return `${categorias.map(cat=>{
-    const items = itemsLimitados(porCategoria[cat]);
+  const bloque = (titulo, clave, todos)=>{
+    const items = itemsLimitados(todos);
     if(!items.length) return '';
-    return `<div class="cat-heading">${escaparHTML(cat)}</div><div data-scrollkey="stockcat:${escaparHTML(cat)}" style="max-height:360px;overflow-y:auto;">${items.map(p=>renderProductoCard(p)).join('')}</div>`;
-  }).join('')}
-  ${sinCategoria.length ? `<div class="cat-heading">Sin categoría</div><div data-scrollkey="stockcat:__sin" style="max-height:360px;overflow-y:auto;">${itemsLimitados(sinCategoria).map(p=>renderProductoCard(p)).join('')}</div>` : ''}
-  ${state.productos.length===0 ? '<p class="empty">Todavía no cargaste productos.</p>' : ''}
-  ${state.productos.length>0 && productosFiltrados.length===0 ? '<p class="empty">No encontramos productos con ese filtro.</p>' : ''}`;
+    const uds = todos.reduce((t,p)=>t+p.variantes.reduce((a,v)=>a+(Number(v.stock)||0),0),0);
+    return `<section class="stk-group" aria-label="${escaparHTML(titulo)}">
+      <div class="stk-group-head"><h3>${escaparHTML(titulo)}</h3><span class="stk-group-meta">${todos.length} prenda${todos.length===1?'':'s'} · ${uds} u.</span></div>
+      <div class="stk-group-list" data-scrollkey="stockcat:${escaparHTML(clave)}">${items.map(p=>renderProductoCard(p)).join('')}</div>
+    </section>`;
+  };
+  return `${categorias.map(cat=>bloque(cat,cat,porCategoria[cat])).join('')}
+  ${bloque('Sin categoría','__sin',sinCategoria)}
+  ${state.productos.length===0 ? '<div class="stk-empty"><strong>Todavía no cargaste productos.</strong><span>Usá “+ Añadir prenda” para empezar con la carga rápida.</span></div>' : ''}
+  ${state.productos.length>0 && productosFiltrados.length===0 ? '<div class="stk-empty"><strong>No encontramos productos con ese filtro.</strong><span>Probá con otra palabra o elegí “Todas las categorías”.</span></div>' : ''}`;
 }
 
 function valorOrdenTalle(talle){
@@ -230,55 +247,113 @@ function compararVariantesPorTalle(a,b){
   if(talleA!==talleB) return talleA.localeCompare(talleB,'es');
   return String(a.color||'').localeCompare(String(b.color||''),'es');
 }
+function estadoStock(n){ return n<=0 ? 'low' : n<=LOW_STOCK ? 'mid' : 'ok'; }
+/* Menú emergente de acciones de la prenda (⋯). Eliminar solo lo ve el administrador. */
+let stockAbiertos = new Set();
+function toggleProd(id){ stockAbiertos.has(id) ? stockAbiertos.delete(id) : stockAbiertos.add(id); renderAll(); }
+let popKey = null;
+function cerrarPop(){ popKey = null; const q = document.getElementById('pop'); if(q) q.style.display = 'none'; }
+function togglePop(key, el, items){
+  let q = document.getElementById('pop');
+  if(!q){ q = document.createElement('div'); q.id = 'pop'; q.className = 'pop'; q.setAttribute('role','menu'); document.body.appendChild(q); }
+  if(popKey===key){ cerrarPop(); return; }
+  popKey = key; popAbiertoEn = Date.now();
+  q.innerHTML = items.map(i=>`<button type="button" role="menuitem" class="${i[2]||''}" onclick="cerrarPop(); ${i[1]}">${i[0]}</button>`).join('');
+  q.style.display = 'block';
+  const r = el.getBoundingClientRect(), w = q.offsetWidth;
+  q.style.top = (r.bottom+6)+'px'; q.style.left = Math.max(8, Math.min(r.right-w, innerWidth-w-8))+'px';
+}
+document.addEventListener('click', e=>{ if(popKey && !e.target.closest('.pop') && !e.target.closest('[data-pop]')) cerrarPop(); });
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') cerrarPop(); });
+let popAbiertoEn = 0;
+window.addEventListener('scroll', ()=>{ if(Date.now()-popAbiertoEn>400) cerrarPop(); }, true);
+function menuProd(id, el){
+  const items = [['Editar',"iniciarEdicionProducto('"+id+"')"],['Imprimir etiquetas',"abrirReimpresion('"+id+"')"]];
+  if(session==='admin') items.push(['Eliminar producto',"pedirEliminarProducto('"+id+"')",'dng']);
+  togglePop('p'+id, el, items);
+}
 function renderProductoCard(p){
-  const totalStock = p.variantes.reduce((a,v)=>a+v.stock,0);
+  const totalStock = p.variantes.reduce((a,v)=>a+(Number(v.stock)||0),0);
   const variantesOrdenadas = p.variantes.slice().sort(compararVariantesPorTalle);
+  const id = escaparHTML(p.id);
+  const pctD = porcentajeRecargo('Débito'), pctC = porcentajeRecargo('Crédito');
+  const chip = (rotulo,valor,clase='')=>`<span class="stk-chip ${clase}"><span class="stk-chip-l">${rotulo}</span> <span class="num">${valor}</span></span>`;
+  const editando = productoEditandoId===p.id && productoEditDraft;
+  const estado = totalStock<=0 ? 'Sin stock' : totalStock<=LOW_STOCK ? 'Stock bajo' : 'En stock';
+  const buscado = stockSearch.trim().toLowerCase();
+  const abierto = stockAbiertos.has(p.id) || productoEditandoId===p.id || addVarianteFormFor===p.id || productoAEliminarId===p.id
+    || (buscado && p.variantes.some(v=>(v.codigo||'').toLowerCase()===buscado));
   return `
-  <div class="card">
-    <div class="card-title">
-      <span>${p.nombre} <span class="muted num" style="font-size:12px;">· ${session === 'admin' ? 'costo '+money(p.costo)+' · ' : ''}venta ${money(p.precio)}${porcentajeRecargo('Débito')>0 ? ' · débito '+money(Math.round(p.precio*(1+porcentajeRecargo('Débito')/100))) : ''}${porcentajeRecargo('Crédito')>0 ? ' · crédito '+money(Math.round(p.precio*(1+porcentajeRecargo('Crédito')/100))) : ''}</span></span>
-      <span style="display:flex;align-items:center;gap:8px;"><span class="pill ${totalStock<=0?'low':totalStock<=LOW_STOCK?'mid':'ok'}">${totalStock} en stock</span><button class="btn small ghost" onclick="iniciarEdicionProducto('${p.id}')">Editar</button></span>
+  <article class="card stk-card ${totalStock<=0?'is-out':''} ${abierto?'abierto':'cerrado'}">
+    <header class="stk-card-head" role="button" tabindex="0" aria-expanded="${abierto}" aria-label="${abierto?'Cerrar':'Abrir'} ${escaparHTML(p.nombre)}" onclick="toggleProd('${id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleProd('${id}');}">
+      <span class="stk-chev" aria-hidden="true">${abierto?'▾':'▸'}</span>
+      <div class="stk-card-title">
+        <h4>${escaparHTML(p.nombre)}${p.descripcion ? ` <span class="stk-desc">· ${escaparHTML(p.descripcion)}</span>` : ''}</h4>
+      </div>
+      <span class="stk-precio num">${money(p.precio)}</span>
+      <div class="stk-card-side">
+        <span class="pill stk-total ${estadoStock(totalStock)}" title="${estado}"><span class="num">${totalStock}</span> en stock</span>
+        <button type="button" class="ico" data-pop aria-haspopup="menu" aria-label="Acciones de ${escaparHTML(p.nombre)}" onclick="event.stopPropagation(); menuProd('${id}',this)">⋯</button>
+      </div>
+    </header>
+    ${abierto ? `<div class="stk-body">
+    <div class="stk-chips">
+      ${session==='admin' ? chip('Costo',money(p.costo),'muted') : ''}
+      ${chip('Venta',money(p.precio),'strong')}
+      ${pctD>0 ? chip('Débito',money(Math.round(p.precio*(1+pctD/100)))) : ''}
+      ${pctC>0 ? chip('Crédito',money(Math.round(p.precio*(1+pctC/100)))) : ''}
     </div>
-    ${p.descripcion ? `<div class="prod-desc">${p.descripcion}</div>` : ''}
-    ${productoEditandoId===p.id ? `
-      <div class="row" style="margin-top:10px;">
-        <div class="field"><label>Nombre</label><input type="text" value="${productoEditDraft.nombre}" oninput="productoEditDraft.nombre=this.value"></div>
-        <div class="field"><label>Categoría</label><select oninput="productoEditDraft.categoria=this.value">${state.config.categorias.map(c=>`<option value="${c}" ${productoEditDraft.categoria===c?'selected':''}>${c}</option>`).join('')}</select></div>
-        <div class="field"><label>Descripción</label><input type="text" value="${productoEditDraft.descripcion}" oninput="productoEditDraft.descripcion=this.value"></div>
-        ${session === 'admin' ? `<div class="field"><label>Costo</label><input type="number" min="0" value="${productoEditDraft.costo}" oninput="productoEditDraft.costo=this.value"></div>` : ''}
-        <div class="field"><label>Precio</label><input type="number" min="0" value="${productoEditDraft.precio}" oninput="productoEditDraft.precio=this.value"></div>
-      </div>
-      <button class="btn small primary" onclick="guardarEdicionProducto('${p.id}')">Guardar cambios</button>
-      <button class="btn small ghost" onclick="cancelarEdicionProducto()">Cancelar</button>
-    ` : ''}
-    ${p.variantes.length===0 ? '<p class="empty">Sin variantes cargadas todavía.</p>' : variantesOrdenadas.map(v=>`
-      <div class="variant-row">
-        <span class="vlabel">${v.talle||'-'} ${v.color?('· '+v.color):''} ${v.codigo?`<span class="pill mid" style="margin-left:4px;">${v.codigo}</span>`:''}</span>
-        <span class="pill ${v.stock<=0?'low':v.stock<=LOW_STOCK?'mid':'ok'}">${v.stock}</span>
-        <div class="stepper">
-          <button onclick="ajustarStock('${p.id}','${v.id}',-1)">−</button>
-          <button onclick="ajustarStock('${p.id}','${v.id}',1)">+</button>
+    ${editando ? `
+      <div class="stk-edit">
+        <div class="stk-form-grid">
+          <div class="stk-field stk-span2"><label>Nombre</label><input type="text" value="${escaparHTML(productoEditDraft.nombre)}" oninput="productoEditDraft.nombre=this.value"></div>
+          <div class="stk-field"><label>Categoría</label><select onchange="productoEditDraft.categoria=this.value">${state.config.categorias.map(c=>`<option value="${escaparHTML(c)}" ${productoEditDraft.categoria===c?'selected':''}>${escaparHTML(c)}</option>`).join('')}</select></div>
+          <div class="stk-field stk-span2"><label>Descripción</label><input type="text" value="${escaparHTML(productoEditDraft.descripcion)}" oninput="productoEditDraft.descripcion=this.value"></div>
+          ${session === 'admin' ? `<div class="stk-field"><label>Costo</label><input type="number" min="0" value="${escaparHTML(productoEditDraft.costo)}" oninput="productoEditDraft.costo=this.value"></div>` : ''}
+          <div class="stk-field"><label>Precio</label><input type="number" min="0" value="${escaparHTML(productoEditDraft.precio)}" oninput="productoEditDraft.precio=this.value"></div>
         </div>
-        <button class="link-btn" onclick="eliminarVariante('${p.id}','${v.id}')">Quitar</button>
-      </div>
-    `).join('')}
-    <div class="row" style="margin-top:10px;">
-      ${addVarianteFormFor===p.id ? `
-        <div class="field" style="flex:1 1 90px;"><label>Talles</label><input type="text" value="${nuevaVariante.talle}" oninput="nuevaVariante.talle=this.value" placeholder="1,2,3 o S,M,L"></div>
-        <div class="field" style="flex:1 1 90px;"><label>Colores</label><input type="text" value="${nuevaVariante.color}" oninput="nuevaVariante.color=this.value" placeholder="Negro, Blanco..."></div>
-        <div class="field" style="flex:1 1 70px;"><label>Cantidad (c/u)</label><input type="number" min="1" value="${nuevaVariante.stock||1}" oninput="nuevaVariante.stock=this.value"></div>
-        <div class="field" style="flex:0 0 auto;justify-content:flex-end;">
-          <div style="display:flex;gap:6px;"><button class="btn small primary" onclick="guardarVariante('${p.id}')">Agregar</button><button class="btn small ghost" onclick="addVarianteFormFor=null; renderAll();">Cancelar</button></div>
+        <div class="stk-actions">
+          <button class="btn small primary" onclick="guardarEdicionProducto('${id}')">Guardar cambios</button>
+          <button class="btn small ghost" onclick="cancelarEdicionProducto()">Cancelar</button>
         </div>
-      ` : `<button class="btn small ghost" onclick="addVarianteFormFor='${p.id}'; nuevaVariante={talle:'',color:'',stock:'',codigo:''}; renderAll();">+ Talle/color</button>`}
+      </div>` : ''}
+    ${p.variantes.length===0 ? '<p class="stk-novars">Sin variantes cargadas todavía.</p>' : `
+    <div class="stk-vars" role="table" aria-label="Variantes de ${escaparHTML(p.nombre)}">
+      <div class="stk-vrow stk-vhead" role="row"><span role="columnheader">Talle</span><span role="columnheader">Color</span><span role="columnheader">Clave</span><span role="columnheader" class="r">Stock</span><span role="columnheader" class="r">Ajustar</span><span role="columnheader"><span class="sr-only">Acciones</span></span></div>
+      ${variantesOrdenadas.map(v=>{
+        const vid = escaparHTML(v.id), et = escaparHTML(etiquetaVariante(v));
+        return `<div class="stk-vrow ${Number(v.stock)<=0?'is-out':''}" role="row">
+        <span class="stk-talle" role="cell">${escaparHTML(v.talle||'-')}</span>
+        <span class="stk-color" role="cell">${v.color ? escaparHTML(v.color) : '<span class="muted">—</span>'}</span>
+        <span class="stk-clave" role="cell">${v.codigo ? `<code>${escaparHTML(v.codigo)}</code>` : ''}</span>
+        <span class="r" role="cell"><span class="pill ${estadoStock(Number(v.stock))}"><span class="num">${v.stock}</span></span></span>
+        <span class="r" role="cell"><span class="stepper">
+          <button onclick="ajustarStock('${id}','${vid}',-1)" aria-label="Restar una unidad a ${et}">−</button>
+          <button onclick="ajustarStock('${id}','${vid}',1)" aria-label="Sumar una unidad a ${et}">+</button>
+        </span></span>
+        <span class="stk-vact" role="cell"><button class="link-btn" onclick="eliminarVariante('${id}','${vid}')" aria-label="Quitar ${et}">Quitar</button></span>
+      </div>`;}).join('')}
+    </div>`}
+    ${addVarianteFormFor===p.id ? `
+    <div class="stk-addvar">
+      <div class="stk-form-grid">
+        <div class="stk-field"><label>Talles</label><input type="text" value="${escaparHTML(nuevaVariante.talle)}" oninput="nuevaVariante.talle=this.value" placeholder="1,2,3 o S,M,L"></div>
+        <div class="stk-field"><label>Colores</label><input type="text" value="${escaparHTML(nuevaVariante.color)}" oninput="nuevaVariante.color=this.value" placeholder="Negro, Blanco..."></div>
+        <div class="stk-field"><label>Cantidad (c/u)</label><input type="number" min="1" value="${nuevaVariante.stock||1}" oninput="nuevaVariante.stock=this.value"></div>
+      </div>
+      <div class="stk-actions"><button class="btn small primary" onclick="guardarVariante('${id}')">Agregar</button><button class="btn small ghost" onclick="addVarianteFormFor=null; renderAll();">Cancelar</button></div>
+    </div>` : ''}
+    ${(addVarianteFormFor!==p.id || productoAEliminarId===p.id) ? `<footer class="stk-card-foot">
+      ${addVarianteFormFor===p.id ? '' : `<button class="btn small ghost" onclick="addVarianteFormFor='${id}'; nuevaVariante={talle:'',color:'',stock:'',codigo:''}; renderAll();">+ Talle / color</button>`}
+      <span class="stk-spacer"></span>
       ${productoAEliminarId===p.id ? `
-        <span class="muted" style="font-size:12.5px;align-self:center;">¿Eliminar este producto y todas sus variantes?</span>
-        <button class="btn small danger" onclick="eliminarProducto('${p.id}')">Sí, eliminar</button>
+        <span class="stk-confirm" role="alert">¿Eliminar este producto y todas sus variantes? No se puede deshacer.</span>
+        <button class="btn small danger" onclick="eliminarProducto('${id}')">Sí, eliminar</button>
         <button class="btn small ghost" onclick="productoAEliminarId=null; renderAll();">Cancelar</button>
-      ` : `${addVarianteFormFor===p.id ? '' : `<button class="btn small" onclick="abrirReimpresion('${p.id}')">Etiquetas</button>`}
-        <button class="btn small danger" onclick="pedirEliminarProducto('${p.id}')">Eliminar producto</button>`}
-    </div>
-  </div>`;
+      ` : ''}
+    </footer>` : ''}
+  </div>` : ''}
+  </article>`;
 }
 
 /* Evita que variantes de productos distintos compartan código (rompería el escaneo). Si ya existe en otro producto, agrega -V2, -V3... */
@@ -468,6 +543,7 @@ function guardarVariante(prodId){
   const colores = dividirLista(nuevaVariante.color);
   const coloresFinales = colores.length ? colores : [''];
   const cantidad = Math.max(1, Math.floor(Number(nuevaVariante.stock))||1);
+  const combinaciones = talles.length*coloresFinales.length;
   let nuevas = 0, sumadas = 0;
   talles.forEach(talle=>coloresFinales.forEach(color=>{
     const codigo = claveAutomatica(p, talle, color);

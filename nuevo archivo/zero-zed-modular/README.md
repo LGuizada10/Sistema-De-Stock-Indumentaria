@@ -19,6 +19,16 @@ No cambió ninguna función: solo se movió el código de lugar.
 
 > **Cumplimiento legal:** completá `legal/datos-negocio.js` y leé `LEEME_CUMPLIMIENTO.md` (qué se hizo, qué falta y qué consultar con un profesional).
 
+## Antes de publicar en GitHub
+
+- El SQL generado dentro de `migracion/` puede contener ventas, costos y movimientos reales. No lo publiques ni lo ejecutes en otro proyecto; el `.gitignore` de la raíz excluye ese archivo.
+- La app se conecta al proyecto de Supabase configurado en `frontend/js/data/supabase.js`. La clave `sb_publishable_...` es una clave pública de cliente, no una contraseña; nunca agregues claves `service_role`, `sb_secret_...` ni contraseñas al repositorio.
+- Los datos deben seguir protegidos por las políticas RLS del SQL y los registros públicos de Supabase Auth deben permanecer desactivados.
+- No subas respaldos JSON, exportaciones, paquetes ZIP ni las copias HTML antiguas que están fuera de esta carpeta.
+- GitHub Pages sirve el frontend estático; no ejecuta el SQL ni instala Supabase. Para usar la app publicada necesitás configurar el dominio permitido en Supabase y revisar las páginas legales antes de habilitarla.
+
+El repositorio está organizado dentro de `nuevo archivo/zero-zed-modular`. Al preparar los cambios, revisá el estado de Git y confirmá que los archivos ignorados no estén ya versionados antes de crear un commit.
+
 ## Cómo abrirlo
 Abrí `index.html` en el navegador (doble clic). Tiene que estar toda la carpeta junta.
 Para subirlo a internet (Netlify, GitHub Pages, etc.) subí la carpeta completa.
@@ -60,6 +70,7 @@ zero-zed/
 | Copia de seguridad, Excel, borrar todo | `modules/datos.js` |
 | Recibo / comprobante | `modules/comprobante.js` |
 | Accesibilidad (etiquetas, teclado) | `ui/accesibilidad.js`, `css/12-accesibilidad.css` |
+| Stock (indicadores, tarjetas, tabla de variantes) | `modules/stock.js`, `css/13-stock.css` |
 | Aviso de almacenamiento / pie legal | `ui/aviso-almacenamiento.js`, `index.html` |
 | Textos legales, datos del negocio | `legal/` |
 | Pestañas, menú "Más", cabecera, modo claro/oscuro | `ui/navegacion.js`, `ui/cabecera.js` |
@@ -74,8 +85,12 @@ Tip: abrí la consola del navegador (F12). El error indica el archivo y la líne
 Si agregás un archivo nuevo, ponelo en `index.html` **antes** de `app/inicio.js`.
 Los archivos comparten variables y funciones entre sí (no son "módulos aislados"), por eso el orden es importante.
 
-## Backend (Supabase) — `backend/zero-zed-supabase-completo.sql`
-Es **tu SQL completo y actualizado**, en un solo archivo: tablas, permisos (RLS), funciones, ventas, facturas, auditoría y endurecimiento.
-Se puede volver a ejecutar sin romper datos existentes.
+## SQL de Supabase
 
-**Cómo se usa:** cuando haya que cambiar algo de la base, se modifica este archivo (se lo pedís a Claude), se copia **todo** su contenido y se pega en Supabase → SQL Editor → Run. Este archivo es la versión de referencia: guardalo siempre actualizado.
+La guía [backend/LEEME_SQL.md](backend/LEEME_SQL.md) clasifica los SQL por uso:
+
+- `backend/zero-zed-supabase-completo.sql`: estructura, permisos, funciones y auditoría. Es el SQL base para instalar o actualizar el esquema; no es la importación del respaldo.
+- `backend/CONSULTAS_SOLO_LECTURA.sql`: consultas `SELECT`; ejecutar una por vez para ver datos, sin modificarlos.
+- `migracion/migrar-zero-zed-2026-10-08.sql`: migración de la copia local; reemplaza los datos de negocio después de archivarlos. Ejecutar solo en el proyecto confirmado y solo para esta migración.
+
+El archivo completo del esquema es la versión de referencia. Si se cambia el backend, actualizar ese archivo y guardarlo junto con el proyecto.

@@ -5,6 +5,7 @@
 -- el borrado automático de facturas terminadas a los 21 días (sección 4c),
 -- el login por USUARIO en vez de mail (sección 2c)
 -- los ajustes de stock que no se pisan entre dispositivos (sección 2d)
+-- las promociones y ofertas (sección 3b)
 -- y el endurecimiento: precios solo para el admin y auditoría hecha por la base (sección 7).
 -- Se puede ejecutar de nuevo sobre una base que ya existe sin romper nada.
 -- =====================================================================
@@ -359,7 +360,7 @@ end $$;
 --     La pantalla de login pide "usuario" y contraseña. Esta función traduce
 --     el usuario al mail con el que está dado de alta en Supabase Auth.
 --     El usuario por defecto es lo que va antes de la @ del mail
---     (lguizada58@gmail.com -> lguizada58).
+--     (usuario@ejemplo.com -> usuario).
 -- ---------------------------------------------------------------------
 
 -- Completa el usuario de las cuentas que ya existían sin él
@@ -399,8 +400,8 @@ $$;
 
 -- IMPORTANTE (seguridad): esta función NO debe poder llamarse desde el navegador, porque
 -- cualquiera con la clave pública podría averiguar el mail real de un usuario.
--- El programa actual inicia sesión con mail y no la usa. Si algún día se vuelve al login por
--- usuario, se hace con mails internos (usuario@tudominio) y no hace falta esta función.
+-- El programa inicia sesión con USUARIO usando mails internos: la pantalla arma
+-- usuario@DOMINIO_INTERNO (ver frontend/js/core/config.js) y no necesita esta función.
 revoke all on function public.email_de_usuario(text) from public, anon, authenticated;
 
 
@@ -516,6 +517,146 @@ revoke all on all tables in schema public from anon;
 
 
 -- ---------------------------------------------------------------------
+-- 3b) PROMOCIONES (ofertas y liquidaciones)
+--     Una promoción aplica a categorías y/o prendas puntuales. Todas las prendas de una
+--     misma promoción se cuentan juntas. "niveles" = [{"cant":1,"precio":3000},{"cant":2,"precio":5000}]
+--     significa: 1 prenda cuesta $3000 y llevando 2 pagás $5000 en total.
+--     El precio final lo calcula la BASE al registrar la venta (registrar_venta).
+-- ---------------------------------------------------------------------
+create table if not exists public.promociones (
+  id text primary key default gen_random_uuid()::text,
+  nombre text not null,
+  activa boolean not null default true,
+  productos_ids text[] not null default '{}',
+  categorias text[] not null default '{}',
+  niveles jsonb not null default '[]'::jsonb,
+  fecha_desde date,
+  fecha_hasta date,
+  creado_en timestamptz not null default now()
+);
+alter table public.venta_items add column if not exists precio_lista numeric(14,2);
+alter table public.venta_items add column if not exists promo text not null default '';
+
+alter table public.promociones enable row level security;
+drop policy if exists ver_promociones on public.promociones;
+drop policy if exists admin_promociones on public.promociones;
+create policy ver_promociones on public.promociones for select to authenticated using (public.es_usuario());
+create policy admin_promociones on public.promociones for all to authenticated
+  using (public.es_admin()) with check (public.es_admin());
+revoke all on public.promociones from anon;
+
+-- Promoción vigente de una prenda (si está en varias, gana la más antigua)
+create or replace function public.promo_aplicable(p_producto text, p_categoria text, p_fecha date)
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select id from public.promociones
+   where activa
+     and (fecha_desde is null or fecha_desde <= p_fecha)
+     and (fecha_hasta is null or fecha_hasta >= p_fecha)
+     and (p_producto = any(productos_ids) or p_categoria = any(categorias))
+   order by creado_en, id
+   limit 1
+$$;
+revoke all on function public.promo_aplicable(text, text, date) from public, anon;
+
+-- Precio final de cada unidad. p_reg = precios normales ordenados de MAYOR a MENOR.
+-- Elige la combinación de packs más barata (los packs se repiten); lo que sobra paga el precio
+-- de "1 prenda" (o su precio normal si no hay nivel de 1). Nunca cobra más que el precio normal.
+-- Es el mismo cálculo que hace el programa en frontend/js/core/promociones.js.
+create or replace function public.promo_precios(p_reg numeric[], p_niveles jsonb)
+returns numeric[]
+language plpgsql
+immutable
+as $$
+declare
+  n integer := coalesce(array_length(p_reg, 1), 0);
+  tp numeric[] := array_fill(null::numeric, array[50]);
+  c numeric[];
+  pre numeric[];
+  best numeric[];
+  blk integer[];
+  res numeric[];
+  nv jsonb;
+  k integer;
+  pr numeric;
+  i integer;
+  j integer;
+  sumc numeric;
+  cand numeric;
+  tot numeric;
+  v numeric;
+  acum numeric;
+begin
+  if n = 0 then return '{}'::numeric[]; end if;
+
+  for nv in select jsonb_array_elements(coalesce(p_niveles, '[]'::jsonb)) loop
+    begin
+      k := floor((nv->>'cant')::numeric)::integer;
+      pr := round((nv->>'precio')::numeric);
+    exception when others then
+      k := null; pr := null;
+    end;
+    if k is not null and pr is not null and k >= 1 and k <= 50 and pr >= 0 then
+      tp[k] := least(coalesce(tp[k], pr), pr);
+    end if;
+  end loop;
+
+  c := array_fill(0::numeric, array[n]);
+  pre := array_fill(0::numeric, array[n + 1]);   -- pre[m+1] = suma de los primeros m
+  best := array_fill(0::numeric, array[n + 1]);  -- best[m+1] = costo mínimo de las primeras m unidades
+  blk := array_fill(1, array[n + 1]);            -- tamaño del último bloque elegido
+  res := array_fill(0::numeric, array[n]);
+
+  for i in 1..n loop
+    c[i] := case when tp[1] is not null then least(p_reg[i], tp[1]) else p_reg[i] end;
+    pre[i + 1] := pre[i] + c[i];
+  end loop;
+
+  for i in 1..n loop
+    best[i + 1] := best[i] + c[i];
+    blk[i + 1] := 1;
+    for k in 2..least(i, 50) loop
+      if tp[k] is not null then
+        sumc := pre[i + 1] - pre[i - k + 1];
+        cand := best[i - k + 1] + least(tp[k], sumc);
+        if cand < best[i + 1] then
+          best[i + 1] := cand;
+          blk[i + 1] := k;
+        end if;
+      end if;
+    end loop;
+  end loop;
+
+  i := n;
+  while i > 0 loop
+    k := blk[i + 1];
+    sumc := pre[i + 1] - pre[i - k + 1];
+    if k = 1 then
+      res[i] := c[i];
+    else
+      tot := least(tp[k], sumc);
+      acum := 0;
+      for j in (i - k + 1)..(i - 1) loop
+        v := case when sumc > 0 then floor((2 * tot * c[j] + sumc) / (2 * sumc)) else 0 end;
+        v := least(v, tot - acum);
+        res[j] := v;
+        acum := acum + v;
+      end loop;
+      res[i] := tot - acum;
+    end if;
+    i := i - k;
+  end loop;
+
+  return res;
+end $$;
+revoke all on function public.promo_precios(numeric[], jsonb) from public, anon;
+
+
+-- ---------------------------------------------------------------------
 -- 4) REGISTRAR UNA VENTA (todo en una sola operación)
 --    Descuenta stock, guarda ítems, costos y pagos. Si algo falla, no se guarda nada.
 --    Los precios y costos se toman de la base (no del navegador).
@@ -534,8 +675,11 @@ declare
   v_item jsonb;
   v_pago jsonb;
   v_var record;
+  v_row record;
+  v_promo record;
   v_cant integer;
   v_idx integer := 0;
+  v_i integer;
   v_subtotal numeric := 0;
   v_recargo numeric := 0;
   v_suma_base numeric := 0;
@@ -548,7 +692,12 @@ declare
   v_metodos text := '';
   v_n_pagos integer;
   v_unidades integer := 0;
+  v_regs numeric[];
+  v_ns integer[];
+  v_res numeric[];
+  v_ahorro numeric := 0;
   v_ahora timestamp := (now() at time zone 'America/Argentina/Buenos_Aires');
+  v_hoy date := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
 begin
   -- Marca esta transacción como "venta": la auditoría de la sección 7 ignora los cambios internos de stock y totales
   perform set_config('zerozed.en_venta', '1', true);
@@ -581,7 +730,26 @@ begin
   insert into public.ventas (id, fecha, hora, turno_id, metodo_pago, subtotal, recargo_pct, total, usuario_id)
   values (v_venta_id, v_ahora::date, date_trunc('minute', v_ahora)::time, p_turno_id, '', 0, 0, 0, auth.uid());
 
-  -- Ítems: valida stock, descuenta y guarda
+  -- Una fila por UNIDAD vendida (así las promociones pueden repartir el precio unidad por unidad)
+  drop table if exists _zz_unidades;
+  create temp table _zz_unidades (
+    n serial,
+    variante_id text,
+    producto_id text,
+    nombre text,
+    categoria text,
+    label text,
+    codigo text,
+    talle text,
+    color text,
+    costo numeric,
+    reg numeric,
+    precio numeric,
+    promo_id text,
+    promo_nombre text
+  ) on commit drop;
+
+  -- Ítems: valida stock, descuenta y arma las unidades
   for v_item in select jsonb_array_elements(p_items) loop
     v_cant := (v_item->>'cantidad')::integer;
     if v_cant is null or v_cant < 1 then
@@ -609,20 +777,59 @@ begin
            etiquetas_pendientes = greatest(0, etiquetas_pendientes - v_cant)
      where id = v_var.variante_id;
 
+    insert into _zz_unidades (variante_id, producto_id, nombre, categoria, label, codigo, talle, color, costo, reg, precio, promo_id)
+    select v_var.variante_id, v_var.producto_id,
+           v_var.nombre || case when coalesce(v_var.descripcion,'') <> '' then ' (' || v_var.descripcion || ')' else '' end,
+           coalesce(v_var.categoria,''),
+           coalesce(nullif(concat_ws(' / ', nullif(nullif(v_var.talle,''),'-'), nullif(nullif(v_var.color,''),'-')), ''), 'Único'),
+           coalesce(v_var.codigo,''), coalesce(v_var.talle,''), coalesce(v_var.color,''),
+           coalesce(v_var.costo, 0), v_var.precio, v_var.precio,
+           public.promo_aplicable(v_var.producto_id, v_var.categoria, v_hoy)
+      from generate_series(1, v_cant);
+
+    v_unidades := v_unidades + v_cant;
+  end loop;
+
+  -- Promociones: cada promoción reparte su precio entre sus unidades (las más caras primero)
+  for v_promo in
+    select pr.id, pr.nombre, pr.niveles
+      from public.promociones pr
+     where pr.id in (select distinct u.promo_id from _zz_unidades u where u.promo_id is not null)
+  loop
+    select array_agg(round(u.reg) order by round(u.reg) desc, u.n),
+           array_agg(u.n order by round(u.reg) desc, u.n)
+      into v_regs, v_ns
+      from _zz_unidades u
+     where u.promo_id = v_promo.id;
+
+    v_res := public.promo_precios(v_regs, v_promo.niveles);
+    for v_i in 1..array_length(v_ns, 1) loop
+      update _zz_unidades set precio = v_res[v_i] where n = v_ns[v_i];
+    end loop;
+    update _zz_unidades set promo_nombre = v_promo.nombre where promo_id = v_promo.id;
+  end loop;
+
+  -- Ítems de la venta: unidades iguales (misma prenda y mismo precio) se agrupan en una fila
+  for v_row in
+    select u.variante_id, u.producto_id, u.nombre, u.categoria, u.label, u.codigo, u.talle, u.color,
+           u.costo, u.reg, u.precio, coalesce(u.promo_nombre, '') as promo_nombre,
+           count(*)::integer as cant, min(u.n) as primero
+      from _zz_unidades u
+     group by u.variante_id, u.producto_id, u.nombre, u.categoria, u.label, u.codigo, u.talle, u.color,
+              u.costo, u.reg, u.precio, u.promo_nombre
+     order by min(u.n), u.precio desc
+  loop
     v_item_id := gen_random_uuid()::text;
     insert into public.venta_items
-      (id, venta_id, idx, producto_id, variante_id, nombre, categoria, variante_label, codigo, talle, color, cantidad, precio_unit)
+      (id, venta_id, idx, producto_id, variante_id, nombre, categoria, variante_label, codigo, talle, color, cantidad, precio_unit, precio_lista, promo)
     values
-      (v_item_id, v_venta_id, v_idx, v_var.producto_id, v_var.variante_id,
-       v_var.nombre || case when coalesce(v_var.descripcion,'') <> '' then ' (' || v_var.descripcion || ')' else '' end,
-       coalesce(v_var.categoria,''),
-       coalesce(nullif(concat_ws(' / ', nullif(nullif(v_var.talle,''),'-'), nullif(nullif(v_var.color,''),'-')), ''), 'Único'),
-       coalesce(v_var.codigo,''), coalesce(v_var.talle,''), coalesce(v_var.color,''),
-       v_cant, v_var.precio);
-    insert into public.venta_items_costos (item_id, costo_unit) values (v_item_id, coalesce(v_var.costo, 0));
+      (v_item_id, v_venta_id, v_idx, v_row.producto_id, v_row.variante_id, v_row.nombre, v_row.categoria, v_row.label,
+       v_row.codigo, v_row.talle, v_row.color, v_row.cant, v_row.precio, v_row.reg,
+       case when v_row.precio < v_row.reg then v_row.promo_nombre else '' end);
+    insert into public.venta_items_costos (item_id, costo_unit) values (v_item_id, v_row.costo);
 
-    v_subtotal := v_subtotal + v_var.precio * v_cant;
-    v_unidades := v_unidades + v_cant;
+    v_subtotal := v_subtotal + v_row.precio * v_row.cant;
+    v_ahorro := v_ahorro + (v_row.reg - v_row.precio) * v_row.cant;
     v_idx := v_idx + 1;
   end loop;
 
@@ -646,7 +853,7 @@ begin
   end loop;
 
   if v_suma_base <> round(v_subtotal) then
-    raise exception 'Los pagos no suman el subtotal (pagos %, subtotal %)', v_suma_base, round(v_subtotal);
+    raise exception 'Los pagos no suman el subtotal (pagos %, subtotal %). Si hay promociones, actualizá la página e intentá de nuevo', v_suma_base, round(v_subtotal);
   end if;
 
   update public.ventas
@@ -654,7 +861,8 @@ begin
    where id = v_venta_id;
 
   insert into public.movimientos (rol, accion, detalle)
-  values (public.rol_actual(), 'Venta', '$' || round(v_subtotal + v_recargo)::text || ' · ' || v_unidades || ' prenda(s) · ' || v_metodos);
+  values (public.rol_actual(), 'Venta', '$' || round(v_subtotal + v_recargo)::text || ' · ' || v_unidades || ' prenda(s) · ' || v_metodos
+          || case when v_ahorro > 0 then ' · promo -$' || round(v_ahorro)::text else '' end);
 
   return v_venta_id;
 end;
@@ -746,8 +954,9 @@ end $$;
 --     Si tu usuario todavía no está creado en Authentication > Users,
 --     esta línea no hace nada: créalo y volvé a ejecutarla.)
 -- ---------------------------------------------------------------------
+-- Poné acá el mail de cada administrador (los demás quedan como empleados).
 update public.perfiles set rol = 'admin'
-where id = (select id from auth.users where email = 'lguizada58@gmail.com');
+where id in (select id from auth.users where email in ('admin@zerozed.app'));
 
 
 -- ---------------------------------------------------------------------
@@ -882,17 +1091,59 @@ create trigger ventas_auditoria
   for each row execute function public.trg_aud_ventas();
 
 
+-- ---------------------------------------------------------------------
+-- 8) BORRAR TODO (botón de Ajustes > Zona de riesgo)
+--    Solo el administrador. Borra en una sola operación productos, stock,
+--    ventas, devoluciones, turnos, compras y solicitudes de factura.
+--    Se conservan: configuración (nombre, recargos, categorías), usuarios
+--    y el registro de movimientos (donde queda anotado el borrado).
+-- ---------------------------------------------------------------------
+create or replace function public.borrar_todo()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.es_admin() then
+    raise exception 'Solo el administrador puede borrar todo';
+  end if;
+  -- Evita que la auditoría anote un movimiento por cada fila borrada
+  perform set_config('zerozed.en_venta', '1', true);
+  delete from public.solicitudes_factura where true;
+  delete from public.devoluciones where true;   -- se van también sus líneas
+  delete from public.ventas where true;         -- se van también ítems, costos y pagos
+  delete from public.compras where true;        -- se van también sus líneas
+  delete from public.turnos where true;         -- se van también sus gastos
+  delete from public.productos where true;      -- se van también costos y variantes
+  delete from public.promociones where true;
+  insert into public.movimientos (rol, accion, detalle)
+  values ('admin', 'Datos borrados', 'Se borraron todos los datos del sistema');
+end $$;
+revoke all on function public.borrar_todo() from public, anon;
+grant execute on function public.borrar_todo() to authenticated;
+
+
 -- =====================================================================
 -- PASOS MANUALES (solo si es una instalación nueva)
 --
--- 1) Authentication > Users > "Add user": creá tu usuario (mail + contraseña)
---    y uno por cada empleado. Marcá "Auto Confirm User".
---    Cada persona entra al programa con su mail y su contraseña.
+-- 1) Authentication > Users > "Add user": creá una cuenta por persona con un MAIL INTERNO:
+--    usuario@zerozed.app (el dominio es DOMINIO_INTERNO de frontend/js/core/config.js).
+--    Ej.: lucia@zerozed.app + contraseña. Marcá "Auto Confirm User".
+--    Cada persona entra al programa escribiendo solo su USUARIO ("lucia") y su contraseña.
+--    Para el administrador: creá admin@zerozed.app y cambiá el mail del UPDATE de la sección 6
+--    (o dejá tu mail actual: el programa también acepta un mail completo en el campo Usuario).
 -- 2) DESACTIVÁ los registros públicos en Authentication (opción para permitir
 --    nuevos usuarios / sign ups). Si queda activa, cualquiera podría crearse
 --    una cuenta.
 --
 -- 3) SEGURIDAD EN AUTHENTICATION (panel de Supabase): contraseñas de 12 o más
 --    caracteres, y no dejar direcciones de redirección con comodines (*).
+-- 3c) CAPTCHA: Authentication > Attack Protection > "Enable CAPTCHA protection" >
+--    proveedor Cloudflare Turnstile, y pegá la "Secret key". La "Site key" va en
+--    TURNSTILE_SITE_KEY de frontend/js/core/config.js (ver LEEME_SEGURIDAD.md).
 -- 4) Si volvés a correr este archivo, no hace falta hacer nada más: es seguro repetirlo.
 -- =====================================================================
+
+-- Para ver quién es quién (resultado de control):
+select usuario, rol from public.perfiles order by usuario;

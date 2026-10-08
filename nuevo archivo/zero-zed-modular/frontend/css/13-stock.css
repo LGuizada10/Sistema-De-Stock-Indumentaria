@@ -1,0 +1,147 @@
+/* [ZZ] 13-stock.css — Pestaña Stock: indicadores, barra de herramientas, tarjetas y tabla de variantes. */
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+.stk-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+
+/* Indicadores */
+.stk-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px;}
+.stk-kpi{display:flex;flex-direction:column;gap:3px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--paper-2);}
+.stk-kpi-v{font-family:var(--font-display);font-size:22px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums;}
+.stk-kpi-l{font-size:11.5px;color:var(--ink-soft);font-weight:600;}
+.stk-kpi.warn{border-color:color-mix(in srgb,var(--warn) 55%,var(--line));}
+.stk-kpi.warn .stk-kpi-v{color:var(--warn);}
+.stk-kpi.bad{border-color:color-mix(in srgb,var(--brick) 55%,var(--line));}
+.stk-kpi.bad .stk-kpi-v{color:var(--brick);}
+
+/* Campos */
+.stk-field{display:flex;flex-direction:column;gap:5px;min-width:0;}
+.stk-field label{font-size:12px;font-weight:700;color:var(--ink-soft);letter-spacing:.2px;}
+.stk-field input,.stk-field select{width:100%;min-height:40px;}
+.stk-form{margin-bottom:16px;}
+.stk-form-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:10px 0 12px;}
+.stk-span2{grid-column:span 2;}
+.stk-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
+
+/* Barra de herramientas */
+.stk-toolbar{display:grid;grid-template-columns:minmax(220px,1.6fr) minmax(190px,1fr) auto;gap:12px;align-items:end;padding:12px 14px;margin-bottom:6px;border:1px solid var(--line);border-radius:10px;background:var(--paper-2);}
+.stk-toolbar-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;}
+.stk-toolbar-actions .btn{min-height:40px;white-space:nowrap;}
+
+/* Grupos por categoría */
+.stk-group{margin-top:20px;}
+.stk-group-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding-bottom:8px;margin-bottom:10px;border-bottom:1px solid var(--line);}
+.stk-group-head h3{margin:0;font-family:var(--font-display);font-size:17px;letter-spacing:.2px;}
+.stk-group-meta{font-size:12px;color:var(--ink-soft);font-weight:600;font-variant-numeric:tabular-nums;}
+.stk-group-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:12px;align-items:start;max-height:640px;overflow-y:auto;padding:2px;}
+.stk-empty{display:flex;flex-direction:column;gap:4px;align-items:center;text-align:center;padding:34px 16px;margin-top:18px;border:1px dashed var(--line);border-radius:10px;color:var(--ink-soft);}
+.stk-empty strong{color:var(--ink);}
+
+/* Tarjeta de producto */
+.stk-card{margin:0;padding:14px;display:flex;flex-direction:column;gap:10px;}
+.stk-card.is-out{border-color:color-mix(in srgb,var(--brick) 40%,var(--line));}
+.stk-card-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;}
+.stk-card-title{min-width:0;flex:1 1 auto;}
+.stk-card-title h4{margin:0;font-size:15.5px;line-height:1.3;font-weight:700;overflow-wrap:anywhere;}
+.stk-card .prod-desc{margin-top:2px;font-size:12.5px;color:var(--ink-soft);}
+.stk-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+.stk-chip{display:inline-flex;gap:5px;align-items:baseline;padding:2px 8px;border:1px solid var(--line-soft);border-radius:6px;font-size:12px;background:var(--paper);white-space:nowrap;}
+.stk-chip-l{color:var(--ink-soft);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;font-weight:600;}
+.stk-chip.strong{border-color:var(--line);font-weight:700;}
+.stk-chip.muted{opacity:.85;}
+.stk-card-side{display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex:0 0 auto;}
+.stk-total{font-size:12px;padding:4px 10px;white-space:nowrap;}
+
+/* Tabla de variantes */
+.stk-vars{border:1px solid var(--line-soft);border-radius:8px;overflow:hidden;}
+.stk-vrow{display:grid;grid-template-columns:minmax(44px,.5fr) minmax(70px,1fr) minmax(0,1.6fr) 52px 86px 56px;gap:8px;align-items:center;padding:7px 10px;border-bottom:1px solid var(--line-soft);font-size:13px;}
+.stk-vrow:last-child{border-bottom:0;}
+.stk-vrow:not(.stk-vhead):hover{background:color-mix(in srgb,var(--mustard) 5%,transparent);}
+.stk-vrow.is-out .stk-talle,.stk-vrow.is-out .stk-color{opacity:.6;}
+.stk-vhead{background:var(--paper-2);font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-soft);font-weight:700;padding-top:6px;padding-bottom:6px;}
+.stk-vrow .r{text-align:right;justify-self:end;}
+.stk-talle{font-weight:700;}
+.stk-clave code{font-family:var(--font-mono);font-size:11px;color:var(--ink-soft);overflow-wrap:anywhere;}
+.stk-vact{justify-self:end;}
+.stk-vrow .stepper{display:inline-flex;gap:4px;}
+.stk-vrow .stepper button{width:32px;height:30px;font-size:15px;}
+.stk-novars{margin:0;padding:12px;border:1px dashed var(--line);border-radius:8px;color:var(--ink-soft);font-size:13px;text-align:center;}
+
+/* Formularios dentro de la tarjeta */
+.stk-edit,.stk-addvar{padding:12px;border:1px solid var(--line-soft);border-radius:8px;background:var(--paper-2);}
+.stk-edit .stk-form-grid,.stk-addvar .stk-form-grid{margin-top:0;}
+.stk-addvar .stk-form-grid{grid-template-columns:repeat(3,minmax(0,1fr));}
+
+/* Pie */
+.stk-card-foot{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding-top:10px;border-top:1px solid var(--line-soft);}
+.stk-spacer{flex:1 1 auto;}
+.stk-confirm{font-size:12.5px;color:var(--ink-soft);}
+
+@media (max-width:900px){
+  .stk-toolbar{grid-template-columns:1fr 1fr;}
+  .stk-field-search{grid-column:1 / -1;}
+  .stk-toolbar-actions{grid-column:1 / -1;justify-content:flex-start;}
+  .stk-group-list{grid-template-columns:1fr;max-height:none;overflow:visible;}
+  .stk-form-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+}
+@media (max-width:600px){
+  .stk-head .btn{width:100%;min-height:44px;}
+  .stk-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
+  .stk-kpi{padding:10px 12px;}
+  .stk-kpi-v{font-size:19px;}
+  .stk-toolbar{grid-template-columns:1fr;padding:12px;}
+  .stk-toolbar-actions .btn{flex:1 1 140px;}
+  .stk-form-grid,.stk-addvar .stk-form-grid{grid-template-columns:1fr;}
+  .stk-span2{grid-column:auto;}
+  .stk-card{padding:12px;}
+  .stk-card-head{flex-direction:column;gap:8px;}
+  .stk-card-side{flex-direction:row;align-items:center;width:100%;justify-content:space-between;}
+  .stk-vhead{display:none;}
+  .stk-vars{border:0;border-radius:0;overflow:visible;}
+  .stk-vrow{grid-template-columns:auto 1fr auto auto;grid-template-areas:"talle color stock step" "clave clave clave quitar";gap:6px 10px;padding:10px;border:1px solid var(--line-soft);border-radius:8px;margin-bottom:8px;}
+  .stk-vrow:last-child{border-bottom:1px solid var(--line-soft);}
+  .stk-vrow>span:nth-child(1){grid-area:talle;}
+  .stk-vrow>span:nth-child(2){grid-area:color;}
+  .stk-vrow>span:nth-child(3){grid-area:clave;}
+  .stk-vrow>span:nth-child(4){grid-area:stock;}
+  .stk-vrow>span:nth-child(5){grid-area:step;}
+  .stk-vrow>span:nth-child(6){grid-area:quitar;}
+  .stk-vrow .stepper button{width:40px;height:40px;}
+  .stk-vact .link-btn{min-height:32px;padding:0 4px;}
+  .stk-card-foot .btn{flex:1 1 auto;min-height:40px;}
+  .stk-spacer{display:none;}
+  .stk-card-foot .btn.danger{flex:1 1 100%;}
+}
+
+/* ---- Acciones en menú ⋯ (reemplaza los botones grandes Editar / Etiquetas / Eliminar) ---- */
+.stk-card-side{flex-direction:row;align-items:flex-start;gap:6px;}
+.ico{font-family:var(--font-body);background:transparent;border:1px solid transparent;color:var(--ink-soft);border-radius:8px;font-size:18px;line-height:1;padding:4px 9px;cursor:pointer;transition:border-color .15s,color .15s,background .15s;}
+.ico:hover,.ico:focus-visible{border-color:var(--line);color:var(--ink);background:color-mix(in srgb,var(--ink) 6%,transparent);}
+.pop{display:none;position:fixed;z-index:60;min-width:190px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px;box-shadow:var(--shadow);animation:popIn .14s ease-out;}
+.pop button{all:unset;display:block;width:100%;box-sizing:border-box;padding:9px 12px;border-radius:8px;cursor:pointer;font-family:var(--font-body);font-size:13.5px;color:var(--ink);}
+.pop button:hover,.pop button:focus-visible{background:color-mix(in srgb,var(--ink) 9%,transparent);}
+.pop button.dng{color:var(--brick);}
+.stk-card-foot .stk-confirm{flex:1 1 220px;}
+@keyframes popIn{from{opacity:0;transform:translateY(-4px);}to{opacity:1;transform:none;}}
+@media (prefers-reduced-motion:reduce){.pop{animation:none;}}
+
+/* ---- Una línea por prenda; los talles se abren al tocarla ---- */
+.stk-group-list{grid-template-columns:1fr;max-height:none;overflow:visible;gap:8px;padding:0;}
+.stk-card{padding:0;gap:0;}
+.stk-card .stk-card-head{flex-direction:row;align-items:center;gap:12px;padding:11px 14px;cursor:pointer;border-radius:12px;}
+.stk-card .stk-card-head:hover{background:color-mix(in srgb,var(--mustard) 6%,transparent);}
+.stk-card .stk-card-head:focus-visible{outline:2px solid color-mix(in srgb,var(--mustard) 55%,transparent);outline-offset:-2px;}
+.stk-chev{color:var(--ink-soft);width:12px;flex:0 0 12px;font-size:12px;}
+.stk-card .stk-card-title h4{font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.stk-desc{font-weight:400;font-size:12.5px;color:var(--ink-soft);}
+.stk-precio{font-size:14px;min-width:84px;text-align:right;}
+.stk-card .stk-card-side{width:auto;flex-direction:row;align-items:center;justify-content:flex-end;gap:6px;}
+.stk-card.abierto .stk-card-head{border-bottom:1px solid var(--line-soft);border-bottom-left-radius:0;border-bottom-right-radius:0;}
+.stk-body{display:flex;flex-direction:column;gap:12px;padding:12px 14px 14px;animation:stkIn .18s ease-out;}
+.stk-body .stk-chips{margin-top:0;}
+@keyframes stkIn{from{opacity:0;transform:translateY(-4px);}to{opacity:1;transform:none;}}
+@media (max-width:640px){
+  .stk-precio{display:none;}
+  .stk-card .stk-card-head{gap:8px;padding:11px 12px;}
+  .stk-card .stk-card-side{width:auto;}
+  .stk-body{padding:10px 12px 12px;}
+}
+@media (prefers-reduced-motion:reduce){.stk-body{animation:none;}}
