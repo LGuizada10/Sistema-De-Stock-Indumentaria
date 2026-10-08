@@ -1,8 +1,10 @@
 // [ZZ] modules/etiquetas.js — Etiquetas con código de barras: generación Code 128, impresión y reimpresión.
 function contarEtiquetasStock(){
+  if(stockResumenNube) return Number(stockResumenNube.unidades)||0;
   return state.productos.reduce((total,producto)=>total+producto.variantes.reduce((subtotal,variante)=>subtotal+Math.max(0,Number(variante.stock)||0),0),0);
 }
 function contarEtiquetasPendientes(){
+  if(stockResumenNube) return Number(stockResumenNube.etiquetasPendientes)||0;
   return Object.values(state.etiquetasPendientes||{}).reduce((total,cantidad)=>total+Math.max(0,Number(cantidad)||0),0);
 }
 /* Las etiquetas pendientes SOLO cambian cuando cambia el precio de la prenda (ver marcarEtiquetasPorPrecio).
@@ -14,6 +16,7 @@ function marcarEtiquetasPorPrecio(producto){
   (producto.variantes||[]).forEach(v=>{
     const n=Math.max(0,Number(v.stock)||0);
     if(n>0) state.etiquetasPendientes[v.id]=n; else delete state.etiquetasPendientes[v.id];
+    marcarVarianteSucia(producto,v);
   });
 }
 function cambiarPrecioProducto(producto,nuevoPrecio){
@@ -28,6 +31,7 @@ function retirarEtiquetasImpresas(varianteId,cantidad){
   const restantes=(Number(pendientes[varianteId])||0)-retiro;
   if(restantes>0)pendientes[varianteId]=restantes;
   else delete pendientes[varianteId];
+  marcarVariantePorIdSucia(varianteId);
   return retiro;
 }
 function cerrarEtiquetasStock(){
@@ -38,7 +42,11 @@ function cerrarEtiquetasStock(){
   window.etiquetasImpresion=null;
   renderAll();
 }
-function imprimirEtiquetasStock(modo='todas', pid=null, cant=null){
+async function imprimirEtiquetasStock(modo='todas', pid=null, cant=null){
+  if(!pid && modo!=='reimpresion'){
+    try{await asegurarCatalogoCompleto();}
+    catch(e){showToast(e.message||'No se pudo cargar el catálogo completo');return;}
+  }
   const etiquetas=(pid?state.productos.filter(p=>p.id===pid):state.productos).flatMap(producto=>producto.variantes.flatMap(variante=>{
     const stock=Math.max(0,Number(variante.stock)||0);
     const cantidadPendiente=Math.max(0,Number(state.etiquetasPendientes?.[variante.id])||0);

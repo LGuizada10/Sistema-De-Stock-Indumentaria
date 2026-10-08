@@ -54,3 +54,20 @@
   @media (prefers-reduced-motion:reduce){
     *,*::before,*::after{scroll-behavior:auto !important;transition:none !important;}
   }
+  @media (max-width:600px){
+    .hero{gap:8px;padding:10px 0 12px;}
+    .brand{gap:8px;}
+    .brand img{width:38px;height:38px;border-radius:10px;}
+    .brand-kicker{display:none;}
+    .hero-title{font-size:17px;letter-spacing:-.02em;}
+    .header-right{gap:5px;}
+    .sync-tag{padding:4px 6px;font-size:9px;}
+    .status-tag{min-height:34px;padding:4px 7px 4px 19px;border-radius:9px;}
+    .status-tag::before{left:7px;width:6px;height:6px;}
+    .status-tag .status-label{font-size:7px;}
+    .status-tag b{font-size:10px;}
+    .mobile-tools-toggle{width:34px;height:34px;border-radius:10px;font-size:19px;}
+    .mobile-tools-menu{min-width:185px;}
+    nav.tabs::before{display:none;}
+    nav.tabs button.active{background:var(--paper-2);border-color:var(--line);}
+  }

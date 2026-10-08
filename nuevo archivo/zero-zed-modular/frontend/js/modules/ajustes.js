@@ -20,7 +20,7 @@ async function vaciarRegistroMovimientos(){
   if(session!=='admin') return;
   if(!confirm('¿Vaciar todo el registro de movimientos? No se puede deshacer.')) return;
   try{
-    await cola;
+    await sincronizar();
     const {error}=await sb.from('movimientos').delete().neq('id','');
     if(error) throw error;
     state.movimientos=[];

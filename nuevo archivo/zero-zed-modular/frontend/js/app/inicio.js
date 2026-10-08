@@ -10,9 +10,9 @@ async function arrancar(){
 /* Actualiza los datos al volver a la app (o cada minuto) para ver lo que pasó en otros dispositivos */
 async function refrescar(){
   const a = document.activeElement;
-  if(!session || printVentaId || nubeCargando || ventaEnCurso || (a && ['INPUT','SELECT','TEXTAREA'].includes(a.tagName))) return;
+  if(!session || document.hidden || printVentaId || nubeCargando || ventaEnCurso || (a && ['INPUT','SELECT','TEXTAREA'].includes(a.tagName))) return;
   if(historialDesde && currentTab!=='historial' && currentTab!=='devoluciones') historialDesde = null;   /* volver a la carga liviana */
-  try{ await cola; await cargarTodo(); renderAll(); }catch(e){ console.error(e); }
+  try{ await sincronizar(); await cargarTodo(); renderAll(); if(currentTab==='stock'){ultimaConsultaStockNube='';refrescarResultadosStockNube();} else if(currentTab==='vender'&&ventaSearch.trim()) buscarProductosVenta(); }catch(e){ console.error(e); }
 }
 document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) refrescar(); });
 setInterval(refrescar, 60000);

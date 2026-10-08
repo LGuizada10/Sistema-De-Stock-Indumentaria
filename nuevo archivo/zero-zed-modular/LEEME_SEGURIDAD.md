@@ -8,7 +8,7 @@ Si falta alguna librería, el programa muestra un cartel que lo explica.
 - Versión de SheetJS: es la 0.18.5 (la que ya usabas). Tiene avisos de seguridad conocidos al leer planillas de origen no confiable; importá solo Excel propios. Se puede actualizar más adelante.
 
 ## 2) Volver a correr el SQL
-Copiá todo `backend/zero-zed-supabase-completo.sql` y ejecutalo en Supabase → SQL Editor. Es seguro repetirlo. Agrega la función `borrar_todo()` que usa el botón de Ajustes.
+Copiá todo `backend/zero-zed-supabase-completo.sql` y ejecutalo en Supabase → SQL Editor. Es seguro repetirlo. Incluye las funciones de seguridad, reserva de números por lote para Excel, búsqueda/paginación del catálogo y la función `borrar_todo()` que usa el botón de Ajustes. La búsqueda en Supabase requiere ejecutar esta versión actualizada antes de usarla.
 
 ## 3) Usuarios (login por usuario)
 En Supabase → Authentication → Users → *Add user*, creá un mail interno por persona, con *Auto Confirm User*:

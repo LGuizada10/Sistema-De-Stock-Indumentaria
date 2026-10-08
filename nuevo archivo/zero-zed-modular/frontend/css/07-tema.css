@@ -1,81 +1,120 @@
 /* [ZZ] 07-tema.css — Temas claro/oscuro (variables por tema). */
   :root{
     color-scheme:dark;
-    --paper:#111713;
-    --paper-2:#18211C;
-    --card:#202B24;
-    --ink:#E8EFEA;
-    --ink-soft:#A9B7AC;
-    --navy:#142A1E;
-    --mustard:#75D49B;
-    --mustard-dark:#5BBF83;
-    --accent-contrast:#102319;
-    --positive-contrast:#142A1E;
-    --warn:#E2B85F;
-    --brick:#E87478;
-    --green:#75D49B;
-    --line:#405044;
-    --line-soft:#303C33;
-    --button-bg:#26372B;
-    --button-border:#4F6554;
-    --button-hover:#304637;
-    --button-hover-border:#728E78;
-    --button-ghost:#202D24;
-    --button-ghost-border:#405245;
-    --shadow:0 8px 24px rgba(0,0,0,0.22);
+    --paper:#111820;
+    --paper-2:#18212B;
+    --card:#202A35;
+    --ink:#EEF2F5;
+    --ink-soft:#A5B1BD;
+    --navy:#17251D;
+    --mustard:#79CFA0;
+    --mustard-dark:#5DB784;
+    --accent-contrast:#14231B;
+    --positive-contrast:#14231B;
+    --warn:#E9BE69;
+    --brick:#F08086;
+    --green:#79CFA0;
+    --line:#3C4956;
+    --line-soft:#2D3945;
+    --button-bg:#26323E;
+    --button-border:#43515F;
+    --button-hover:#303E4B;
+    --button-hover-border:#607182;
+    --button-ghost:#202B36;
+    --button-ghost-border:#3C4956;
+    --shadow:0 10px 28px rgba(0,0,0,0.24);
   }
   @media (prefers-color-scheme:dark){
     :root:not([data-theme="light"]){
       color-scheme:dark;
-      --paper:#111713;
-      --paper-2:#18211C;
-      --card:#202B24;
-      --ink:#E8EFEA;
-      --ink-soft:#A9B7AC;
-      --navy:#142A1E;
-      --mustard:#75D49B;
-      --mustard-dark:#5BBF83;
-      --accent-contrast:#102319;
-      --positive-contrast:#142A1E;
-      --warn:#E2B85F;
-      --brick:#E87478;
-      --green:#75D49B;
-      --line:#405044;
-      --line-soft:#303C33;
-      --button-bg:#26372B;
-      --button-border:#4F6554;
-      --button-hover:#304637;
-      --button-hover-border:#728E78;
-      --button-ghost:#202D24;
-      --button-ghost-border:#405245;
-      --shadow:0 8px 24px rgba(0,0,0,0.22);
+      --paper:#111820;
+      --paper-2:#18212B;
+      --card:#202A35;
+      --ink:#EEF2F5;
+      --ink-soft:#A5B1BD;
+      --navy:#17251D;
+      --mustard:#79CFA0;
+      --mustard-dark:#5DB784;
+      --accent-contrast:#14231B;
+      --positive-contrast:#14231B;
+      --warn:#E9BE69;
+      --brick:#F08086;
+      --green:#79CFA0;
+      --line:#3C4956;
+      --line-soft:#2D3945;
+      --button-bg:#26323E;
+      --button-border:#43515F;
+      --button-hover:#303E4B;
+      --button-hover-border:#607182;
+      --button-ghost:#202B36;
+      --button-ghost-border:#3C4956;
+      --shadow:0 10px 28px rgba(0,0,0,0.24);
     }
   }
   :root[data-theme="dark"]{
     color-scheme:dark;
-    --paper:#111713;
-    --paper-2:#18211C;
-    --card:#202B24;
-    --ink:#E8EFEA;
-    --ink-soft:#A9B7AC;
-    --navy:#142A1E;
-    --mustard:#75D49B;
-    --mustard-dark:#5BBF83;
-    --accent-contrast:#102319;
-    --positive-contrast:#142A1E;
-    --warn:#E2B85F;
-    --brick:#E87478;
-    --green:#75D49B;
-    --line:#405044;
-    --line-soft:#303C33;
-    --button-bg:#26372B;
-    --button-border:#4F6554;
-    --button-hover:#304637;
-    --button-hover-border:#728E78;
-    --button-ghost:#202D24;
-    --button-ghost-border:#405245;
-    --shadow:0 8px 24px rgba(0,0,0,0.22);
+    --paper:#111820;
+    --paper-2:#18212B;
+    --card:#202A35;
+    --ink:#EEF2F5;
+    --ink-soft:#A5B1BD;
+    --navy:#17251D;
+    --mustard:#79CFA0;
+    --mustard-dark:#5DB784;
+    --accent-contrast:#14231B;
+    --positive-contrast:#14231B;
+    --warn:#E9BE69;
+    --brick:#F08086;
+    --green:#79CFA0;
+    --line:#3C4956;
+    --line-soft:#2D3945;
+    --button-bg:#26323E;
+    --button-border:#43515F;
+    --button-hover:#303E4B;
+    --button-hover-border:#607182;
+    --button-ghost:#202B36;
+    --button-ghost-border:#3C4956;
+    --shadow:0 10px 28px rgba(0,0,0,0.24);
   }
+  /* Pulido visual del tema oscuro; solo estilos, sin efectos sobre las consultas. */
+  :root[data-theme="dark"] body{
+    background:linear-gradient(145deg,#10161E 0%,var(--paper) 48%,#151E28 100%);
+    background-attachment:fixed;
+  }
+  :root[data-theme="dark"] main{
+    background:linear-gradient(155deg,#1A242F,var(--paper-2));
+    border-color:#34414E;
+  }
+  :root[data-theme="dark"] .card{
+    background:linear-gradient(145deg,#222E3A,#1E2833);
+    border-color:#354351;
+    box-shadow:0 3px 12px rgba(0,0,0,.12);
+  }
+  :root[data-theme="dark"] nav.tabs{
+    background:#151E28;
+    border-color:#34414E;
+  }
+  :root[data-theme="dark"] nav.tabs button.active{
+    background:#26343F;
+    border-color:#43544F;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.035);
+  }
+  :root[data-theme="dark"] input,
+  :root[data-theme="dark"] select,
+  :root[data-theme="dark"] textarea{
+    background:#161F29;
+    border-color:#465461;
+  }
+  :root[data-theme="dark"] input:focus,
+  :root[data-theme="dark"] select:focus,
+  :root[data-theme="dark"] textarea:focus{
+    border-color:var(--mustard);
+    box-shadow:0 0 0 3px rgba(121,207,160,.17);
+  }
+  :root[data-theme="dark"] table th{color:#B8C5CF;background:rgba(13,19,26,.24);}
+  :root[data-theme="dark"] .theme-toggle{border-color:#43515F;}
+  :root[data-theme="dark"] .theme-toggle:hover{border-color:var(--mustard);}
+  :root[data-theme="dark"] ::selection{background:rgba(121,207,160,.3);color:#F4FFF8;}
   :root[data-theme="light"]{
     color-scheme:light;
     --paper:#F5F7F5;

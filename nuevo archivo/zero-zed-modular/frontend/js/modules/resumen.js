@@ -21,7 +21,7 @@ function fmtMes(m){ const [y,mm]=m.split('-'); return MESES_LARGO[Number(mm)-1]+
 function mesSumando(m,n){ const [y,mm]=m.split('-').map(Number); const d=new Date(y,mm-1+n,1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
 function esGastoDeDevolucion(g){ return /^(Devolución|Diferencia de cambio):/.test(String(g.desc||'')); }
 function costoDeItem(item, productoId){
-  const prod = state.productos.find(p=>p.id===productoId);
+  const prod = productoPorId(productoId);
   const cv = item ? (Number(item.costoUnit)||0) : 0;
   return cv>0 ? cv : (Number(prod ? prod.costo : 0)||0);
 }
@@ -51,7 +51,7 @@ function calcularGanancia(filtroFecha){
     }
     if(esCambioDevolucion(d)){
       productosRecibidosCambio(d).forEach(l=>{
-        const prod = state.productos.find(p=>p.id===l.productoId);
+        const prod = productoPorId(l.productoId);
         const c = Number(prod ? prod.costo : 0)||0;
         const nombre = prod ? prod.nombre+(prod.descripcion?' ('+prod.descripcion+')':'') : l.nombre;
         if(!(c>0)){ sinCosto.add(nombre); return; }
@@ -149,7 +149,8 @@ function renderResumenAdmin(){
   const stockAgotado=state.productos.flatMap(producto=>producto.variantes
     .filter(variante=>Number(variante.stock||0)<=0)
     .map(variante=>({producto,variante})));
-  const filasStock=stockAgotado.slice(0,6);
+  const agotadasTotal=Number(stockResumenNube?.agotadas??stockAgotado.length);
+  const filasStock=stockResumenNube?.agotadasMuestra ? stockResumenNube.agotadasMuestra.map(x=>({producto:{nombre:x.nombre},variante:{talle:x.talle,color:x.color}})) : stockAgotado.slice(0,6);
   const totalVentasHoy=totalNetoDeFecha(fechaHoy);
 
   return `
@@ -165,7 +166,7 @@ function renderResumenAdmin(){
     <div class="summary-kpi"><div class="summary-kpi-label">Ventas netas hoy</div><div class="summary-kpi-value">${money(totalVentasHoy)}</div><div class="summary-kpi-note">${ventasHoy.length} venta(s) registrada(s)</div></div>
     <div class="summary-kpi"><div class="summary-kpi-label">Unidades vendidas</div><div class="summary-kpi-value">${unidadesVendidas}</div><div class="summary-kpi-note">Sin descontar devoluciones</div></div>
     <div class="summary-kpi"><div class="summary-kpi-label">Ganancia neta estimada</div><div class="summary-kpi-value">${gananciaCompleta?money(gananciaHoy.neta):'—'}</div><div class="summary-kpi-note">${gananciaCompleta?'Después de costos y gastos':'Faltan costos en '+gananciaHoy.sinCosto.length+' producto(s)'}</div></div>
-    <div class="summary-kpi"><div class="summary-kpi-label">Variantes agotadas</div><div class="summary-kpi-value">${stockAgotado.length}</div><div class="summary-kpi-note">Talles o colores con stock cero</div></div>
+    <div class="summary-kpi"><div class="summary-kpi-label">Variantes agotadas</div><div class="summary-kpi-value">${agotadasTotal}</div><div class="summary-kpi-note">Talles o colores con stock cero</div></div>
   </div>
 
   <div class="summary-grid">
@@ -199,7 +200,7 @@ function renderResumenAdmin(){
     <div class="card-title">Stock agotado <button class="btn small ghost" onclick="goTab('stock')">Revisar stock</button></div>
     ${filasStock.length ? `<div class="summary-stock-list">${filasStock.map(({producto,variante})=>`
       <div class="summary-stock-item"><div><div class="summary-stock-name">${escaparHTML(producto.nombre)}</div><div class="summary-stock-meta">${escaparHTML([variante.talle,variante.color].filter(Boolean).join(' · ')||'Único')}</div></div><span class="pill low">0</span></div>
-    `).join('')}</div>${stockAgotado.length>filasStock.length?`<p class="section-note" style="margin:8px 0 0;">Y ${stockAgotado.length-filasStock.length} variante(s) más.</p>`:''}`:'<p class="empty">No hay variantes agotadas.</p>'}
+    `).join('')}</div>${agotadasTotal>filasStock.length?`<p class="section-note" style="margin:8px 0 0;">Y ${agotadasTotal-filasStock.length} variante(s) más.</p>`:''}`:'<p class="empty">No hay variantes agotadas.</p>'}
   </div>
   `;
 }

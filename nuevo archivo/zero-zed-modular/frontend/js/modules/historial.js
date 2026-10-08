@@ -128,7 +128,7 @@ async function exportarVentasDia(){
   const turnoDeVenta = venta => turnosDia.find(t=>t.id===venta.turnoId);
   const nombreTurno = venta => turnoDeVenta(venta)?.turno || 'Sin turno asociado';
   const datosVariante = item => {
-    const producto = state.productos.find(p=>p.id===item.productoId);
+    const producto = productoPorId(item.productoId);
     const variante = producto?.variantes.find(v=>v.id===item.varianteId);
     return {
       codigo: item.codigo || variante?.codigo || '',

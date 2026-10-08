@@ -187,4 +187,31 @@
   .mobile-tools{position:relative;}
   .mobile-tools-toggle{display:none;}
   .mobile-tools-menu{display:flex;align-items:center;gap:10px;}
+
+  /* Cabecera y navegación: identidad y controles agrupados con jerarquía clara. */
+  .hero{padding:16px 4px 17px;border-bottom:1px solid var(--line-soft);}
+  .brand{gap:13px;min-width:0;}
+  .brand img{width:50px;height:50px;object-fit:cover;border:1px solid var(--line);border-radius:12px;box-shadow:0 3px 10px rgba(0,0,0,.12);}
+  .brand-copy{min-width:0;}
+  .brand-kicker{display:block;margin-bottom:3px;color:var(--mustard);font:600 9px var(--font-mono);letter-spacing:.15em;}
+  .hero-title{font-size:25px;line-height:1.05;letter-spacing:-.035em;}
+  .hero-sub{margin-top:5px;color:var(--ink-soft);font-size:11.5px;}
+  .header-right{gap:9px;}
+  .sync-tag{padding:5px 8px;border-radius:7px;background:var(--paper-2);font-size:10.5px;}
+  .status-tag{display:flex;align-items:center;min-height:40px;padding:6px 12px 6px 27px;border:1px solid color-mix(in srgb,var(--green) 30%,var(--line));border-radius:11px;background:color-mix(in srgb,var(--green) 9%,var(--card));color:var(--ink);font-family:var(--font-body);white-space:nowrap;}
+  .status-tag::before{left:11px;width:7px;height:7px;box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 14%,transparent);}
+  .status-tag.off{border-color:var(--line);background:var(--paper-2);}
+  .status-tag.off::before{box-shadow:none;}
+  .status-copy{display:grid;gap:1px;}
+  .status-tag .status-label{font-size:9px;line-height:1;color:var(--ink-soft);font-weight:600;letter-spacing:.04em;text-transform:uppercase;}
+  .status-tag b{font-size:12px;line-height:1.1;}
+  .theme-toggle{min-height:40px;padding:7px 12px;border:1px solid var(--line);border-radius:10px;background:var(--paper-2);font-size:11.5px;}
+  .theme-toggle-icon{font-size:16px;}
+  .logout-link{min-height:36px;padding:7px 10px;border:1px solid transparent;border-radius:8px;text-decoration:none;}
+  .logout-link:hover{border-color:var(--line);}
+  nav.tabs::before{content:'MÓDULOS';display:flex;align-items:center;padding:0 13px 0 9px;color:var(--ink-soft);font:600 9px var(--font-mono);letter-spacing:.14em;white-space:nowrap;}
+  nav.tabs button{min-height:40px;padding:8px 15px;font-size:12.5px;}
+  nav.tabs button.active{background:color-mix(in srgb,var(--mustard) 12%,var(--card));color:var(--mustard);border-color:color-mix(in srgb,var(--mustard) 30%,var(--line));}
+  .nav-more-wrap>button{min-height:40px;padding:8px 14px;border-radius:7px;background:transparent;color:var(--ink-soft);font:600 12.5px var(--font-body);cursor:pointer;}
+  .nav-more-wrap>button:hover,.nav-more-wrap>button.active{background:var(--button-hover);color:var(--ink);}
   .mobile-nav-label{display:none;}

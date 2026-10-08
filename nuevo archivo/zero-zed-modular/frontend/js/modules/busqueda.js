@@ -1,18 +1,74 @@
 // [ZZ] modules/busqueda.js — Buscadores compartidos (Vender, Stock, Compras), lector de código de barras y resultados.
+let cacheTextoCatalogo = new WeakMap(), indiceCodigosCatalogo = null, indiceEtiquetasCatalogo = null;
+const temporizadoresBusqueda = {};
+let ventaResultadosNube=[], ventaTotalNube=0, ventaCargandoNube=false, secuenciaVentaNube=0;
+async function buscarProductosVenta(){
+  const secuencia=++secuenciaVentaNube, term=ventaSearch.trim();
+  if(!term){ventaResultadosNube=[];ventaTotalNube=0;ventaCargandoNube=false;actualizarResultadosVenta();return;}
+  ventaCargandoNube=true;actualizarResultadosVenta();
+  try{
+    const resultado=await consultarCatalogo(term,ventaSelCat,0,8);
+    if(secuencia!==secuenciaVentaNube)return;
+    ventaResultadosNube=resultado.productos;ventaTotalNube=resultado.total;
+  }catch(e){if(secuencia===secuenciaVentaNube)showToast(e.message||'No se pudo buscar en Supabase');}
+  finally{if(secuencia===secuenciaVentaNube){ventaCargandoNube=false;actualizarResultadosVenta();}}
+}
+function invalidarTextoProducto(producto){ if(producto) cacheTextoCatalogo.delete(producto); }
+function invalidarIndicesBusqueda(){ cacheTextoCatalogo=new WeakMap(); indiceCodigosCatalogo=null; indiceEtiquetasCatalogo=null; }
+function agregarAlIndice(indice,clave,ref){ if(!clave) return; const lista=indice.get(clave)||[]; if(!lista.some(x=>x.v===ref.v)) lista.push(ref); indice.set(clave,lista); }
+function quitarDelIndice(indice,clave,variante){
+  const lista=indice.get(clave); if(!lista) return;
+  const siguiente=lista.filter(x=>x.v!==variante);
+  if(siguiente.length) indice.set(clave,siguiente); else indice.delete(clave);
+}
+function registrarVarianteEnIndiceBusqueda(producto,variante){
+  invalidarTextoProducto(producto);
+  if(!indiceCodigosCatalogo||!indiceEtiquetasCatalogo) return;
+  agregarAlIndice(indiceCodigosCatalogo,(variante.codigo||'').trim().toLowerCase(),{p:producto,v:variante});
+  agregarAlIndice(indiceEtiquetasCatalogo,codigoBarras(variante,producto).trim().toLowerCase(),{p:producto,v:variante});
+}
+function quitarVarianteDelIndiceBusqueda(producto,variante){
+  invalidarTextoProducto(producto);
+  if(!indiceCodigosCatalogo||!indiceEtiquetasCatalogo) return;
+  quitarDelIndice(indiceCodigosCatalogo,(variante.codigo||'').trim().toLowerCase(),variante);
+  quitarDelIndice(indiceEtiquetasCatalogo,codigoBarras(variante,producto).trim().toLowerCase(),variante);
+}
+function asegurarIndicesCodigos(){
+  if(indiceCodigosCatalogo&&indiceEtiquetasCatalogo) return;
+  indiceCodigosCatalogo=new Map(); indiceEtiquetasCatalogo=new Map();
+  for(const p of state.productos) for(const v of p.variantes){
+    agregarAlIndice(indiceCodigosCatalogo,(v.codigo||'').trim().toLowerCase(),{p,v});
+    agregarAlIndice(indiceEtiquetasCatalogo,codigoBarras(v,p).trim().toLowerCase(),{p,v});
+  }
+}
+function productosConCodigo(codigo){ asegurarIndicesCodigos(); return indiceCodigosCatalogo.get((codigo||'').trim().toLowerCase())||[]; }
+function coincideBusquedaProducto(p,termino){
+  let texto=cacheTextoCatalogo.get(p);
+  if(texto===undefined){ texto=[p.nombre,p.descripcion,p.categoria,p.id,...p.variantes.map(v=>v.codigo||'')].join(' ').toLowerCase(); cacheTextoCatalogo.set(p,texto); }
+  return !termino||texto.includes(termino);
+}
 function actualizarBusqueda(tipo, input){
   if(tipo==='venta') ventaSearch = input.value;
-  if(tipo==='stock') stockSearch = input.value;
+  if(tipo==='stock'){
+    if(stockSearch!==input.value) stockCantidadVisible={};
+    stockSearch = input.value;
+  }
   if(tipo==='venta') ventaClaveConsultada = '';
   if(tipo==='stock') stockClaveConsultada = '';
-  if(tipo==='venta') actualizarResultadosVenta();
-  if(tipo==='stock') actualizarResultadosStock();
+  clearTimeout(temporizadoresBusqueda[tipo]);
+  temporizadoresBusqueda[tipo]=setTimeout(()=>{
+    if(tipo==='venta') buscarProductosVenta();
+    if(tipo==='stock') refrescarResultadosStockNube();
+  },70);
 }
 /* Lector de códigos de barras: el lector "escribe" la clave y pulsa Enter.
    - Una sola prenda posible (o un solo talle con stock): se agrega sola al carrito.
    - Varios talles con stock: se elige la prenda y se deja elegir el talle.
    Devuelve false si la clave no existe (entonces sigue la búsqueda normal). */
-function escanearEnVender(clave){
-  const r = resolverClaveExacta(clave);
+async function escanearEnVender(clave){
+  const todas=ventaResultadosNube.flatMap(p=>p.variantes.map(v=>({p,v})));
+  const codigo=clave.trim().toLowerCase();
+  const r=todas.find(({p,v})=>codigoBarras(v,p).toLowerCase()===codigo)||resolverClaveExacta(clave);
   if(!r) return false;
   const nombre = r.p.nombre + (r.p.descripcion?' ('+r.p.descripcion+')':'');
   ventaSearch = ''; ventaClaveConsultada = ''; ventaSelQty = 1;
@@ -28,11 +84,14 @@ function escanearEnVender(clave){
   setTimeout(()=>{ const i=document.querySelector('[data-search="venta"]'); if(i){ i.value=ventaSearch; i.focus(); i.select(); } }, 30);
   return true;
 }
-function buscarClaveConEnter(tipo, event, input){
+async function buscarClaveConEnter(tipo, event, input){
   if(event.key!=='Enter') return;
   event.preventDefault();
+  clearTimeout(temporizadoresBusqueda[tipo]);
+  if(tipo==='venta') await buscarProductosVenta();
+  if(tipo==='stock') await cargarStockDesdeSupabase(true);
   const clave = input.value.trim();
-  if(tipo==='venta' && escanearEnVender(clave)) return;
+  if(tipo==='venta' && await escanearEnVender(clave)) return;
   if(tipo==='venta') ventaClaveConsultada = clave;
   if(tipo==='stock') stockClaveConsultada = clave;
   const panel = document.getElementById(tipo==='venta'?'ventaClaveResultado':'stockClaveResultado');
@@ -77,7 +136,8 @@ function ventaResultadosHTML(){
   const term = ventaSearch.trim().toLowerCase();
   const nota = t => `<p class="section-note" style="margin:10px 0 2px;">${t}</p>`;
   if(!term) return nota('Escribí un nombre o escaneá una etiqueta. Tocá un talle para agregarlo.');
-  const lista = state.productos.filter(p=>(!ventaSelCat||p.categoria===ventaSelCat)&&(p.nombre.toLowerCase().includes(term)||(p.descripcion||'').toLowerCase().includes(term)||(p.categoria||'').toLowerCase().includes(term)||p.variantes.some(v=>(v.codigo||'').toLowerCase().includes(term)))).slice(0,8);
+  if(ventaCargandoNube&&!ventaResultadosNube.length) return nota('Buscando en Supabase…');
+  const lista = ventaResultadosNube;
   if(!lista.length) return nota('No encontramos esa prenda.');
   return lista.map(p=>`<div class="res-prod"><div class="res-top"><span><b>${escaparHTML(p.nombre)}</b>${p.descripcion?` <span class="muted">· ${escaparHTML(p.descripcion)}</span>`:''}</span><span>${money(p.precio)}</span></div><div class="talles">${p.variantes.map(v=>{const n=Number(v.stock)||0, e=[v.talle,v.color].filter(x=>x&&x!=='-').join(' · ')||'Único'; return `<button type="button" class="talle ${n<=0?'sin':''}" ${n<=0?'disabled':''} onclick="agregarVariante('${p.id}','${v.id}')">${escaparHTML(e)}<small>${n}</small></button>`;}).join('')}</div></div>`).join('');
 }
@@ -92,15 +152,4 @@ function agregarVariante(pid,vid){
 function actualizarResultadosVenta(){
   const r=document.getElementById('ventaResultados'); if(r) r.innerHTML=ventaResultadosHTML();
   const h=document.getElementById('ventaClaveResultado'); if(h) h.innerHTML='';
-}
-function actualizarResultadosStock(){
-  const resultados = document.getElementById('stockSearchResults');
-  if(!resultados) return;
-  const term = stockSearch.trim().toLowerCase();
-  let filtrados = state.productos;
-  if(stockCategoryFilter) filtrados = filtrados.filter(p=>p.categoria===stockCategoryFilter);
-  if(term) filtrados = filtrados.filter(p=>p.nombre.toLowerCase().includes(term) || (p.descripcion||'').toLowerCase().includes(term) || p.id.toLowerCase().includes(term) || p.variantes.some(v=>(v.codigo||'').toLowerCase().includes(term)));
-  resultados.innerHTML = renderResultadosStock(filtrados, state.config.categorias);
-  const historial = document.getElementById('stockClaveResultado');
-  if(historial) historial.innerHTML = '';
 }

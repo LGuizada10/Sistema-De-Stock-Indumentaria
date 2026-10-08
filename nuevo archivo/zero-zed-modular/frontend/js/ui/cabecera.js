@@ -18,7 +18,7 @@ document.addEventListener('keydown',event=>{
     if(wrapper&&wrapper.classList.contains('open')){wrapper.classList.remove('open');wrapper.querySelector('.mobile-tools-toggle').setAttribute('aria-expanded','false');wrapper.querySelector('.mobile-tools-toggle').focus();}
   }
 });
-function goTab(id){ currentTab = id; masAbierto=false; if(id==='facturas') cargarFacturas(); renderAll(); if(id==='historial' && session==='admin') asegurarHistorialDesde(mesesParaGrafico()); }
+function goTab(id){ currentTab = id; masAbierto=false; if(id==='facturas') cargarFacturas(); renderAll(); if(id==='stock'){ultimaConsultaStockNube='';refrescarResultadosStockNube();} if(['compras','ajustes'].includes(id)) asegurarCatalogoCompleto().then(()=>renderAll()).catch(e=>showToast(e.message||'No se pudo cargar el catálogo')); if(id==='historial' && session==='admin') asegurarHistorialDesde(mesesParaGrafico()); }
 function toggleTheme(){
   const theme = document.documentElement.dataset.theme==='light' ? 'dark' : 'light';
   document.documentElement.dataset.theme = theme;
@@ -32,9 +32,9 @@ function renderHeader(){
   document.getElementById('dateLine').textContent = session ? (fmtDate(hoy) + ' · ' + ventasDe(hoy).length + ' venta(s) hoy · total neto ' + money(totalNetoDeFecha(hoy))) : 'Control de stock y ventas';
   const themeToggle = document.getElementById('themeToggle');
   const isDark = document.documentElement.dataset.theme!=='light';
-  themeToggle.innerHTML = `<span class="theme-toggle-icon" aria-hidden="true">${isDark?'☼':'☾'}</span><span>${isDark?'Modo claro':'Modo oscuro'}</span>`;
+  themeToggle.innerHTML = `<span class="theme-toggle-icon" aria-hidden="true">${isDark?'☀':'☾'}</span><span>${isDark?'Modo claro':'Modo oscuro'}</span>`;
   themeToggle.setAttribute('aria-label',isDark?'Cambiar al modo claro':'Cambiar al modo oscuro');
-  themeToggle.querySelector('span:last-child').textContent=isDark?'Modo claro':'Modo oscuro';
+  themeToggle.title=isDark?'Cambiar al modo claro':'Cambiar al modo oscuro';
   setSync(estadoSync);
   const t = turnoAbierto();
   const tag = document.getElementById('statusTag');
@@ -44,9 +44,9 @@ function renderHeader(){
   logoutBtn.textContent = 'Salir (' + (session==='admin'?'Admin':'Empleado') + ')';
   if(t){
     tag.className='status-tag';
-    tag.innerHTML = `<span>Turno abierto</span><b>${t.turno}</b>`;
+    tag.innerHTML = `<span class="status-copy"><span class="status-label">Turno activo</span><b>${t.turno}</b></span>`;
   }else{
     tag.className='status-tag off';
-    tag.innerHTML = `<span>Sin turno</span><b>Cerrado</b>`;
+    tag.innerHTML = `<span class="status-copy"><span class="status-label">Estado de caja</span><b>Sin turno</b></span>`;
   }
 }

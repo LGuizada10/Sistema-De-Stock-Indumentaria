@@ -9,7 +9,7 @@ let compraRapida = {nombre:'', categoria:'', descripcion:'', talle:'', color:'',
 let comprasLugarFiltro = '';
 
 function renderCompras(){
-  const prodLinea = state.productos.find(p=>p.id===compraLineaProd);
+  const prodLinea = productoPorId(compraLineaProd);
   const compras = state.compras.slice().reverse();
   const comprasFiltradas = comprasLugarFiltro.trim() ? compras.filter(c=>[c.lugar,c.proveedor,c.direccion,c.telefono].join(' ').toLowerCase().includes(comprasLugarFiltro.trim().toLowerCase())) : compras;
   return `
@@ -80,7 +80,7 @@ function renderCompras(){
 }
 
 function agregarLineaCompra(){
-  const p = state.productos.find(p=>p.id===compraLineaProd);
+  const p = productoPorId(compraLineaProd);
   if(!p) return;
   const v = p.variantes.find(v=>v.id===compraLineaVar);
   if(!v) return;
@@ -95,6 +95,7 @@ function agregarLineaCompra(){
 async function agregarCompraRapida(){
   const nombre = compraRapida.nombre.trim();
   if(!nombre){ showToast('Escribí el nombre de la prenda'); return; }
+  try{await consultarCatalogo(nombre,'',0,100);}catch(e){showToast(e.message||'No se pudo consultar el catálogo');return;}
   const cantidad = Math.max(1, parseInt(compraRapida.cantidad)||0);
   const categoria = compraRapida.categoria || state.config.categorias[0] || 'Otros';
   if(nombreAmbiguo(nombre, compraRapida.descripcion)){ showToast('Hay varias "'+nombre+'". Escribí la descripción para saber a cuál sumar'); return; }
@@ -109,6 +110,7 @@ async function agregarCompraRapida(){
     if(compraRapida.precio!=='') cambiarPrecioProducto(producto, Number(compraRapida.precio)||0);
     producto.categoria = categoria;
   }
+  marcarProductoSucio(producto);
   if(!state.config.categorias.some(c=>c.toLowerCase()===categoria.toLowerCase())) state.config.categorias.push(categoria);
   const talles = (compraRapida.talle.trim() || 'Único').split(/[,;]+/).map(x=>x.trim()).filter(Boolean);
   const colores = (compraRapida.color.trim() || '').split(/[,;]+/).map(x=>x.trim()).filter(Boolean);
@@ -117,6 +119,7 @@ async function agregarCompraRapida(){
     const codigoGenerado = claveAutomatica(producto, talle, color);
     let variante = producto.variantes.find(v=>mismaTalleColor(v,talle,color));
     if(!variante){ variante = {id:uid(), talle, color, codigo:codigoGenerado, stock:0}; producto.variantes.push(variante); }
+    marcarVarianteSucia(producto,variante);
     const existente = compraLineas.find(l=>l.varianteId===variante.id);
     if(existente) existente.cantidad += cantidad;
     else compraLineas.push({productoId:producto.id, varianteId:variante.id, nombre:producto.nombre, varianteLabel:[talle,color].filter(Boolean).join(' / ')||'Único', cantidad});
@@ -135,9 +138,9 @@ function registrarCompra(){
     notas: nuevaCompra.notas.trim(), lineas: compraLineas.map(l=>({...l}))
   });
   compraLineas.forEach(l=>{
-    const p = state.productos.find(p=>p.id===l.productoId);
+    const p = productoPorId(l.productoId);
     const v = p ? p.variantes.find(v=>v.id===l.varianteId) : null;
-    if(v){v.stock += l.cantidad;registrarEtiquetasPendientes(v.id,l.cantidad);}
+    if(v){v.stock += l.cantidad;marcarProductoSucio(p);marcarVarianteSucia(p,v);registrarEtiquetasPendientes(v.id,l.cantidad);}
   });
   save();
   registrarMovimiento('Compra registrada', nuevaCompra.descripcion.trim()+' · '+money(Number(nuevaCompra.costo)||0)+(compraLineas.length ? ' · +'+compraLineas.reduce((a,l)=>a+l.cantidad,0)+' u. al stock' : ''), {guardar:true});
@@ -153,9 +156,9 @@ function eliminarCompra(id){
   const lineas = c.lineas && c.lineas.length ? c.lineas : (c.productoId && c.cantidad>0 ? [{productoId:c.productoId, varianteId:c.varianteId, cantidad:c.cantidad}] : []);
   if(lineas.length && confirm('Esta compra había sumado stock ('+lineas.reduce((a,l)=>a+l.cantidad,0)+' unidades en total). ¿Querés restarlas también del stock actual?')){
     lineas.forEach(l=>{
-      const p = state.productos.find(p=>p.id===l.productoId);
+      const p = productoPorId(l.productoId);
       const v = p ? p.variantes.find(v=>v.id===l.varianteId) : null;
-      if(v){retirarEtiquetasPendientes(v.id,l.cantidad);v.stock = Math.max(0, v.stock - l.cantidad);}
+      if(v){retirarEtiquetasPendientes(v.id,l.cantidad);v.stock = Math.max(0, v.stock - l.cantidad);marcarVarianteSucia(p,v);}
     });
   }
   registrarMovimiento('Compra eliminada', c.descripcion+' · '+money(c.costo));

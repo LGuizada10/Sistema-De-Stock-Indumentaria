@@ -73,25 +73,7 @@ function renderVender(){
   }
 
   const categorias = state.config.categorias;
-  const productos = state.productos;
-  const term = ventaSearch.trim().toLowerCase();
-
-  // si el término coincide EXACTO con el código de una variante, la seleccionamos directo (tipo escaneo de etiqueta)
-  if(term){
-    const exacta = resolverClaveExacta(term);
-    if(exacta){ ventaSelProd = exacta.p.id; ventaSelVar = exacta.v ? exacta.v.id : ''; }
-  }
-
-  let prodsFiltrados = ventaSelCat ? productos.filter(p=>p.categoria===ventaSelCat) : productos;
-  if(term){
-    prodsFiltrados = prodsFiltrados.filter(p=>
-      p.nombre.toLowerCase().includes(term) ||
-      (p.descripcion||'').toLowerCase().includes(term) ||
-      p.id.toLowerCase().includes(term) ||
-      p.variantes.some(v=>(v.codigo||'').toLowerCase().includes(term))
-    );
-  }
-  const prodSel = productos.find(p=>p.id===ventaSelProd);
+  const prodSel = productoPorId(ventaSelProd);
   const variantes = prodSel ? prodSel.variantes : [];
   const varSel = prodSel ? variantes.find(v=>v.id===ventaSelVar) : null;
 
@@ -114,7 +96,7 @@ function renderVender(){
     <div class="buscador"><span aria-hidden="true">⌕</span><input type="text" data-search="venta" placeholder="Escaneá la etiqueta o buscá una prenda" value="${ventaSearch}" aria-label="Buscar prenda" autocomplete="off" oninput="actualizarBusqueda('venta', this)" onkeydown="buscarClaveConEnter('venta', event, this)"></div>
     <details class="sales-category-filter" ${ventaSelCat?'open':''}>
       <summary>${ventaSelCat?'Categoría: '+escaparHTML(ventaSelCat):'Filtrar por categoría'}</summary>
-      <select aria-label="Filtrar prendas por categoría" onchange="ventaSelCat=this.value; renderAll();">
+      <select aria-label="Filtrar prendas por categoría" onchange="ventaSelCat=this.value; renderAll(); buscarProductosVenta();">
         <option value="">Todas las categorías</option>
         ${categorias.map(c=>`<option value="${escaparHTML(c)}" ${ventaSelCat===c?'selected':''}>${escaparHTML(c)}</option>`).join('')}
       </select>
@@ -183,7 +165,7 @@ function setMontoMPSplit(v){
   actualizarResumenPago();
 }
 function agregarAlCarrito(){
-  const p = state.productos.find(p=>p.id===ventaSelProd);
+  const p = productoPorId(ventaSelProd);
   if(!p) return;
   const v = p.variantes.find(v=>v.id===ventaSelVar);
   if(!v) return;
@@ -221,7 +203,12 @@ async function confirmarVenta(){
     const pagos = pago.dividido ? pago.pagos.map(x=>({metodo:x.metodo, base:x.base})) : [{metodo:pago.pagos[0].metodo}];
     const {data:id,error} = await sb.rpc('registrar_venta',{p_turno_id:t.id, p_items:cart.map(i=>({variante_id:i.varianteId, cantidad:i.cantidad})), p_pagos:pagos});
     if(error) throw error;
-    await cargarTodo();
+    try{ await actualizarEstadoTrasVenta(id,cart); }
+    catch(e){
+      console.warn('Venta registrada; se usa la actualización completa como respaldo:',e);
+      try{ await cargarTodo(); }
+      catch(refresco){ console.error(refresco); showToast('Venta registrada. La pantalla actualizará el stock cuando vuelva la conexión.'); }
+    }
     if(facReq){
       const d = facDatos;
       const {error:ef} = await sb.from('solicitudes_factura').insert({venta_id:id, fecha:todayStr(), total:pago.total, nombre:d.nombre.trim(), documento_tipo:d.tipo, documento:d.doc.replace(/\D/g,''), email:d.email.trim(), telefono:d.tel.trim(), domicilio:d.dom.trim()});

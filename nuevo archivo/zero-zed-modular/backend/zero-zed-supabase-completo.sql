@@ -75,6 +75,124 @@ create table if not exists public.variantes (
 drop index if exists public.variantes_codigo_unico;
 create index if not exists variantes_codigo_idx on public.variantes (lower(codigo)) where codigo <> '';
 create index if not exists variantes_producto_idx on public.variantes (producto_id);
+create index if not exists productos_creado_id_idx on public.productos (creado_en, id);
+create index if not exists productos_categoria_creado_idx on public.productos (categoria, creado_en, id);
+create schema if not exists extensions;
+create extension if not exists pg_trgm with schema extensions;
+do $$
+declare esquema_trgm text;
+begin
+  select n.nspname into esquema_trgm
+    from pg_opclass c join pg_namespace n on n.oid=c.opcnamespace
+   where c.opcname='gin_trgm_ops' and c.opcmethod=(select oid from pg_am where amname='gin')
+   limit 1;
+  if esquema_trgm is null then raise exception 'No se encontró el operador gin_trgm_ops de pg_trgm'; end if;
+  execute format('create index if not exists productos_nombre_trgm_idx on public.productos using gin (nombre %I.gin_trgm_ops)', esquema_trgm);
+  execute format('create index if not exists productos_descripcion_trgm_idx on public.productos using gin (descripcion %I.gin_trgm_ops)', esquema_trgm);
+  execute format('create index if not exists productos_categoria_trgm_idx on public.productos using gin (categoria %I.gin_trgm_ops)', esquema_trgm);
+  execute format('create index if not exists variantes_codigo_trgm_idx on public.variantes using gin (codigo %I.gin_trgm_ops) where codigo <> ''''', esquema_trgm);
+end $$;
+
+-- Búsqueda y paginación del catálogo en el servidor. RLS sigue aplicando al usuario.
+create or replace function public.buscar_catalogo(p_termino text default '', p_categoria text default '', p_limite integer default 30, p_offset integer default 0)
+returns jsonb
+language sql
+stable
+set search_path = public
+as $$
+  with pagina as (
+    select p.* from public.productos p
+    where (coalesce(p_categoria, '') = '' or p.categoria = p_categoria)
+      and (
+        coalesce(trim(p_termino), '') = ''
+        or p.nombre ilike '%' || trim(p_termino) || '%'
+        or p.descripcion ilike '%' || trim(p_termino) || '%'
+        or p.categoria ilike '%' || trim(p_termino) || '%'
+        or p.id = trim(p_termino)
+        or exists (
+          select 1 from public.variantes v
+          where v.producto_id = p.id and (
+            v.codigo ilike '%' || trim(p_termino) || '%'
+            or (v.codigo || '-' || coalesce(nullif(regexp_replace(translate(upper(v.talle),'ÁÉÍÓÚÜÑ','AEIOUUN'),'[^A-Z0-9]','','g'),''),'U')) ilike '%' || trim(p_termino) || '%'
+          )
+        )
+      )
+    order by p.creado_en, p.id
+    limit greatest(1, least(coalesce(p_limite, 30), 100))
+    offset greatest(0, coalesce(p_offset, 0))
+  )
+  select jsonb_build_object(
+    'total', (select count(*) from public.productos p
+      where (coalesce(p_categoria, '') = '' or p.categoria = p_categoria)
+        and (
+          coalesce(trim(p_termino), '') = ''
+          or p.nombre ilike '%' || trim(p_termino) || '%'
+          or p.descripcion ilike '%' || trim(p_termino) || '%'
+          or p.categoria ilike '%' || trim(p_termino) || '%'
+          or p.id = trim(p_termino)
+          or exists (
+            select 1 from public.variantes v
+            where v.producto_id = p.id and (
+              v.codigo ilike '%' || trim(p_termino) || '%'
+              or (v.codigo || '-' || coalesce(nullif(regexp_replace(translate(upper(v.talle),'ÁÉÍÓÚÜÑ','AEIOUUN'),'[^A-Z0-9]','','g'),''),'U')) ilike '%' || trim(p_termino) || '%'
+            )
+          )
+        )),
+    'items', coalesce((
+      select jsonb_agg(
+        to_jsonb(p) || jsonb_build_object(
+          'costo', coalesce(pc.costo, 0),
+          'variantes', coalesce(vs.items, '[]'::jsonb)
+        ) order by p.creado_en, p.id
+      )
+      from pagina p
+      left join public.productos_costos pc on pc.producto_id = p.id
+      left join lateral (
+        select jsonb_agg(jsonb_build_object(
+          'id', v.id, 'producto_id', v.producto_id, 'talle', v.talle,
+          'color', v.color, 'codigo', v.codigo, 'stock', v.stock,
+          'etiquetas_pendientes', v.etiquetas_pendientes
+        ) order by v.creado_en, v.id) as items
+        from public.variantes v where v.producto_id = p.id
+      ) vs on true
+    ), '[]'::jsonb)
+  );
+$$;
+revoke all on function public.buscar_catalogo(text, text, integer, integer) from public, anon;
+grant execute on function public.buscar_catalogo(text, text, integer, integer) to authenticated;
+
+create or replace function public.resumen_catalogo()
+returns jsonb
+language sql
+stable
+set search_path = public
+as $$
+  select jsonb_build_object(
+    'prendas', (select count(*) from public.productos),
+    'unidades', coalesce(sum(v.stock), 0),
+    'sinStock', count(*) filter (where v.stock <= 0),
+    'bajo', count(*) filter (where v.stock > 0 and v.stock <= 2),
+    'costo', coalesce(sum(v.stock * coalesce(pc.costo, 0)), 0),
+    'venta', coalesce(sum(v.stock * p.precio), 0),
+    'etiquetasPendientes', coalesce(sum(v.etiquetas_pendientes), 0),
+    'agotadas', count(*) filter (where v.id is not null and v.stock <= 0),
+    'agotadasMuestra', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'productoId', q.producto_id, 'nombre', q.nombre, 'varianteId', q.variante_id,
+        'talle', q.talle, 'color', q.color
+      )) from (
+        select p2.id as producto_id, p2.nombre, v2.id as variante_id, v2.talle, v2.color
+        from public.productos p2 join public.variantes v2 on v2.producto_id=p2.id
+        where v2.stock<=0 order by p2.nombre, v2.id limit 6
+      ) q
+    ), '[]'::jsonb)
+  )
+  from public.productos p
+  left join public.variantes v on v.producto_id = p.id
+  left join public.productos_costos pc on pc.producto_id = p.id;
+$$;
+revoke all on function public.resumen_catalogo() from public, anon;
+grant execute on function public.resumen_catalogo() to authenticated;
 
 -- Turnos y sus gastos / ingresos por cambio
 create table if not exists public.turnos (
@@ -289,6 +407,25 @@ as $$ select nextval('public.productos_num_seq')::integer $$;
 
 revoke all on function public.siguiente_num_producto() from public, anon;
 grant execute on function public.siguiente_num_producto() to authenticated;
+
+-- Reserva números en lote para importar muchas prendas sin una llamada por fila.
+create or replace function public.siguientes_num_productos(p_cantidad integer)
+returns setof integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if p_cantidad is null or p_cantidad < 1 or p_cantidad > 5000 then
+    raise exception 'La cantidad debe estar entre 1 y 5000';
+  end if;
+  return query
+    select nextval('public.productos_num_seq')::integer
+      from generate_series(1, p_cantidad);
+end $$;
+
+revoke all on function public.siguientes_num_productos(integer) from public, anon;
+grant execute on function public.siguientes_num_productos(integer) to authenticated;
 
 -- El número de una prenda queda fijo. Si entra una prenda con número mayor
 -- al de la secuencia (por ejemplo al importar una copia), la secuencia se adelanta.

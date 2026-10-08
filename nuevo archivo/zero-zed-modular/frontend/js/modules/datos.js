@@ -1,5 +1,7 @@
 // [ZZ] modules/datos.js — Copias de seguridad, Excel (importar/exportar) y borrado total de datos.
-function exportarDatos(){
+async function exportarDatos(){
+  try{await asegurarCatalogoCompleto();}
+  catch(e){showToast(e.message||'No se pudo preparar la copia');return;}
   state.config.ultimoRespaldo = todayStr();
   delete state.config.respaldoPospuestoHasta;
   registrarMovimiento('Copia de seguridad','Se descargó una copia de seguridad');
@@ -8,6 +10,8 @@ function exportarDatos(){
   descargarArchivo('zero-zed-backup-'+todayStr()+'.json', contenido, 'application/json');
 }
 async function exportarStockExcel(){
+  try{await asegurarCatalogoCompleto();}
+  catch(e){showToast(e.message||'No se pudo cargar todo el stock');return;}
   if(typeof XLSX === 'undefined'){ showToast('El generador de Excel sigue cargando, probá de nuevo en un segundo'); return; }
   const filas = [];
   state.productos.forEach(p=>{
@@ -27,9 +31,12 @@ async function exportarStockExcel(){
   const blob = new Blob([arrayBuf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   await descargarArchivo('zero-zed-stock-'+todayStr()+'.xlsx', blob, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 }
+const columnasExcelCache = new WeakMap();
 function valorColumna(row, nombres){
-  const clave = Object.keys(row).find(k=>nombres.includes(k.toString().trim().toLowerCase()));
-  return clave===undefined ? '' : row[clave];
+  let columnas=columnasExcelCache.get(row);
+  if(!columnas){ columnas=new Map(Object.keys(row).map(k=>[k.toString().trim().toLowerCase(),k])); columnasExcelCache.set(row,columnas); }
+  for(const nombre of nombres){ const clave=columnas.get(nombre); if(clave!==undefined) return row[clave]; }
+  return '';
 }
 function textoExcel(value){ return value===undefined || value===null ? '' : String(value).trim(); }
 function importarStockExcel(event){
@@ -40,27 +47,42 @@ function importarStockExcel(event){
   const reader = new FileReader();
   reader.onload = async () => {
     try{
+      await asegurarCatalogoCompleto();
       const libro = XLSX.read(reader.result, {type:'array'});
       const hoja = libro.Sheets[libro.SheetNames[0]];
       const filas = XLSX.utils.sheet_to_json(hoja, {defval:''});
       if(!filas.length) throw new Error('sin filas');
+      const normalizadas=filas.map(row=>({
+        nombre:textoExcel(valorColumna(row,['producto','nombre'])),
+        categoria:textoExcel(valorColumna(row,['categoria','categoría']))||'Otros',
+        descripcion:textoExcel(valorColumna(row,['descripcion','descripción'])),
+        codigoImportado:textoExcel(valorColumna(row,['codigo','código'])).toUpperCase(),
+        talle:textoExcel(valorColumna(row,['talle','talla']))||'Único',
+        color:textoExcel(valorColumna(row,['color'])),
+        stock:Math.max(0,Number(valorColumna(row,['stock','cantidad']))||0),
+        costo:textoExcel(valorColumna(row,['costo','costo unitario'])),
+        precio:textoExcel(valorColumna(row,['precio','precio de venta']))
+      })).filter(row=>row.nombre);
+      if(!normalizadas.length) throw new Error('La planilla no tiene prendas con nombre');
+      const nuevosPorClave=new Map();
+      for(const fila of normalizadas){
+        if(buscarProductoPorNombre(fila.nombre,fila.descripcion)) continue;
+        const clave=JSON.stringify([fila.nombre.toLowerCase(),fila.descripcion.toLowerCase()]);
+        if(!nuevosPorClave.has(clave)) nuevosPorClave.set(clave,{num:null});
+      }
+      if(nuevosPorClave.size){
+        const numeros=await reservarNumerosProductos(nuevosPorClave.size);
+        [...nuevosPorClave.values()].forEach((registro,i)=>registro.num=numeros[i]);
+      }
       let actualizadas = 0; let creadas = 0;
-      for(const row of filas){
-        const nombre = textoExcel(valorColumna(row,['producto','nombre']));
-        if(!nombre) continue;
-        const categoria = textoExcel(valorColumna(row,['categoria','categoría'])) || 'Otros';
-        const descripcion = textoExcel(valorColumna(row,['descripcion','descripción']));
-        const codigoImportado = textoExcel(valorColumna(row,['codigo','código'])).toUpperCase();
+      for(const fila of normalizadas){
+        const {nombre,categoria,descripcion,codigoImportado,talle,color,stock,costo:costoTexto,precio:precioTexto}=fila;
         let codigo = codigoImportado;
-        const talle = textoExcel(valorColumna(row,['talle','talla'])) || 'Único';
-        const color = textoExcel(valorColumna(row,['color']));
-        const stockTexto = valorColumna(row,['stock','cantidad']);
-        const stock = Math.max(0, Number(stockTexto)||0);
-        const costoTexto = valorColumna(row,['costo','costo unitario']);
-        const precioTexto = valorColumna(row,['precio','precio de venta']);
         let producto = buscarProductoPorNombre(nombre, descripcion);
         if(!producto){
-          producto = {id:uid(), num:await nuevoNumeroProducto(), nombre, descripcion, categoria, costo:Number(costoTexto)||0, precio:Number(precioTexto)||0, variantes:[]};
+          const clave=JSON.stringify([nombre.toLowerCase(),descripcion.toLowerCase()]), reserva=nuevosPorClave.get(clave);
+          if(!reserva) throw new Error('No se pudo reservar el número de una prenda nueva');
+          producto = {id:uid(), num:reserva.num, nombre, descripcion, categoria, costo:Number(costoTexto)||0, precio:Number(precioTexto)||0, variantes:[]};
           state.productos.push(producto); creadas++;
         }else{
           if(descripcion) producto.descripcion = descripcion;
@@ -68,20 +90,23 @@ function importarStockExcel(event){
           if(costoTexto!=='') producto.costo = Number(costoTexto)||0;
           if(precioTexto!=='') cambiarPrecioProducto(producto, Number(precioTexto)||0);
         }
+        marcarProductoSucio(producto);
         if(!state.config.categorias.some(c=>c.toLowerCase()===categoria.toLowerCase())) state.config.categorias.push(categoria);
         let variante = producto.variantes.find(v=>mismaTalleColor(v,talle,color));
         if(!variante){
           if(!codigo) codigo = claveAutomatica(producto, talle, color);
           variante = {id:uid(), talle, color, codigo, stock};
           producto.variantes.push(variante);
+          registrarVarianteEnIndiceBusqueda(producto,variante);
           registrarEtiquetasPendientes(variante.id,stock);
         }else{
-          if(codigoImportado) variante.codigo = codigoImportado;
+          if(codigoImportado && codigoImportado!==variante.codigo){ quitarVarianteDelIndiceBusqueda(producto,variante); variante.codigo = codigoImportado; }
           const diferenciaStock=stock-Number(variante.stock||0);
           if(diferenciaStock>0) registrarEtiquetasPendientes(variante.id,diferenciaStock);
           else if(diferenciaStock<0) retirarEtiquetasPendientes(variante.id,Math.abs(diferenciaStock));
           variante.stock = stock;
         }
+        marcarVarianteSucia(producto,variante);
         actualizadas++;
       }
       if(!actualizadas) throw new Error('sin productos válidos');
@@ -89,7 +114,7 @@ function importarStockExcel(event){
       save();
       showToast('Stock importado: '+actualizadas+' fila(s), '+creadas+' producto(s) nuevo(s)');
       renderAll();
-    }catch(e){ showToast('No se pudo leer la planilla. Usá la plantilla del botón Descargar stock.'); }
+    }catch(e){ console.error(e); showToast(e.message||'No se pudo leer la planilla. Usá la plantilla del botón Descargar stock.'); }
   };
   reader.readAsArrayBuffer(file);
 }
@@ -112,6 +137,7 @@ function importarDatos(event){
       if(!data.etiquetasPendientes || typeof data.etiquetasPendientes!=='object') data.etiquetasPendientes = {};
       if(!Array.isArray(data.movimientos)) data.movimientos = [];
       state = data;
+      marcarCatalogoCompletoSucio();
       registrarMovimiento('Copia importada','Se restauraron los datos desde un archivo de copia');
       save();
       showToast('Datos importados');
@@ -138,6 +164,7 @@ async function borrarTodo(){
   facturas = []; facSel.clear();
   const movimientosPrevios = state.movimientos || [];
   state = defaultState();
+  marcarCatalogoCompletoSucio();
   state.movimientos = movimientosPrevios;
   registrarMovimiento('Datos borrados','Se borraron todos los datos del sistema');
   save();
