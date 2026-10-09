@@ -15,7 +15,8 @@ function restaurarScrolls(snap){
 function renderAll(){
   const snapScroll = capturarScrolls();
   const vistaActual = (session||'')+'|'+currentTab;
-  const focusSnapshot = isIOSBrowser() ? getFocusableTarget() : null;
+  const conservarFoco = isIOSBrowser() && ultimaVistaRenderizada===vistaActual;
+  const focusSnapshot = conservarFoco ? getFocusableTarget() : null;
   const appEl = document.getElementById('app');
   const overlay = document.getElementById('receiptOverlay');
   if(printVentaId){
@@ -55,4 +56,4 @@ function renderAll(){
   restoreReceiptScroll();
 }
 
-function afterRenderHooks(){ mejorarAccesibilidad(); if(session && currentTab==='vender' && !window.matchMedia('(pointer: coarse)').matches && document.activeElement===document.body){ const i=document.querySelector('[data-search="venta"]'); if(i) i.focus(); } }
+function afterRenderHooks(){ mejorarAccesibilidad(); }

@@ -18,6 +18,7 @@
 .promo-item .muted,.promo-item small{display:block;margin-top:4px}
 .promo-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 .cart-promo{display:block;color:var(--mustard);font-size:11px;margin-top:3px}
+.cart-promo-original{display:block;color:var(--ink-soft);font-size:10px;margin-top:2px;text-decoration:line-through}
 .promo-aviso{display:grid;gap:8px;border-color:color-mix(in srgb,var(--mustard) 45%,var(--line))}
 .promo-aviso>div{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .promo-aviso small{color:var(--ink-soft)}

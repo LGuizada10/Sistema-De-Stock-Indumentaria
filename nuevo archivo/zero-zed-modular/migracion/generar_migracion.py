@@ -134,11 +134,13 @@ def main(src: Path, dst: Path):
         for i, it in enumerate(s.get("items", [])):
             item_id = f'{s["id"]}-i{i}'
             promo_obj = it.get("promoAplicada") or {}
-            promo_name = ""
-            for promotion in data.get("promociones", []):
-                if promotion.get("cantidad") == promo_obj.get("cantidad") and promotion.get("precio") == promo_obj.get("precio"):
-                    promo_name = promotion.get("nombre", "")
-                    break
+            promo_name = promo_obj if isinstance(promo_obj, str) else ""
+            if isinstance(promo_obj, dict):
+                for promotion in data.get("promociones", []):
+                    levels = promotion.get("niveles") or [{"cant": promotion.get("cantidad"), "precio": promotion.get("precio")}]
+                    if any(level.get("cant") == promo_obj.get("cantidad") and level.get("precio") == promo_obj.get("precio") for level in levels):
+                        promo_name = promotion.get("nombre", "")
+                        break
             rows.append([item_id, s["id"], i, it.get("productoId") if it.get("productoId") in product_ids else None, it.get("varianteId") if it.get("varianteId") in variant_ids else None, it.get("nombre", ""), it.get("categoria", ""), it.get("varianteLabel", ""), it.get("codigo", ""), it.get("talle", ""), it.get("color", ""), it.get("cantidad", 1), it.get("precioUnit", 0), it.get("precioBaseUnit", it.get("precioUnit", 0)), promo_name])
             cost_rows.append([item_id, it.get("costoUnit", 0)])
         payments = s.get("pagos") or [{"metodo": s.get("metodoPago", ""), "monto": s.get("total", 0)}]
@@ -173,11 +175,18 @@ def main(src: Path, dst: Path):
 
     promo_rows = []
     for promotion in data.get("promociones", []):
-        # Definitions are preserved but left inactive: the old backup does not say which products/categories they target.
-        promo_rows.append([promotion["id"], promotion.get("nombre", ""), False, [], [], json.dumps([{"cant": promotion.get("cantidad", 1), "precio": promotion.get("precio", 0)}], ensure_ascii=False), None, None])
+        # Preserve modern targeting and status. For legacy backups, infer targeted products from producto.promocionId.
+        product_ids = promotion.get("productos_ids")
+        if product_ids is None:
+            product_ids = [p["id"] for p in products if p.get("promocionId") == promotion["id"]]
+        categories = promotion.get("categorias") or []
+        levels = promotion.get("niveles") or [{"cant": promotion.get("cantidad", 1), "precio": promotion.get("precio", 0)}]
+        promo_rows.append([promotion["id"], promotion.get("nombre", ""), promotion.get("activa", True) is not False,
+                           product_ids, categories, json.dumps(levels, ensure_ascii=False),
+                           promotion.get("fecha_desde"), promotion.get("fecha_hasta")])
     if promo_rows:
         promo_sql = "INSERT INTO public.promociones (id,nombre,activa,productos_ids,categorias,niveles,fecha_desde,fecha_hasta) VALUES\n"
-        promo_sql += ",\n".join("(" + ", ".join([q(r[0]), q(r[1]), q(r[2]), "ARRAY[]::text[]", "ARRAY[]::text[]", q(r[5]) + "::jsonb", "NULL", "NULL"]) + ")" for r in promo_rows) + ";"
+        promo_sql += ",\n".join("(" + ", ".join([q(r[0]), q(r[1]), q(r[2]), "ARRAY[" + ", ".join(q(x) for x in r[3]) + "]::text[]", "ARRAY[" + ", ".join(q(x) for x in r[4]) + "]::text[]", q(r[5]) + "::jsonb", q(r[6]) if r[6] else "NULL", q(r[7]) if r[7] else "NULL"]) + ")" for r in promo_rows) + ";"
         statements.append(promo_sql)
     else:
         statements.append("-- promociones: sin filas en la copia.")
@@ -196,7 +205,7 @@ def main(src: Path, dst: Path):
         "COMMIT;",
         "-- Las sesiones de Supabase Auth/perfiles se conservan. Los PIN antiguos no se importan; el nuevo login usa Auth.",
         "-- Las solicitudes de factura actuales se archivaron; no existen en la copia JSON local.",
-        "-- Las 2 promociones antiguas se preservan inactivas porque la copia no identifica productos/categorías objetivo.",
+        "-- Las promociones preservan su alcance, vigencia y niveles tal como figuran en la copia.",
         "-- Las referencias históricas a productos/variantes ya ausentes se dejan NULL en FK; snapshots con nombre/código/precio quedan intactos y el JSON completo está archivado.",
     ]
     dst.write_text("\n\n".join(statements) + "\n", encoding="utf-8")

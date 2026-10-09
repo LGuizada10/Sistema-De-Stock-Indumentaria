@@ -114,10 +114,10 @@ function renderVender(){
       <tbody>
         ${cart.map((i,idx)=>`
           <tr class="${i.varianteId===window.__nuevaLinea?'fila-nueva':''}">
-            <td>${escaparHTML(i.nombre)}${i.promoAplicada?`<small class="cart-promo">${escaparHTML(i.promoAplicada)}</small>`:''}</td>
+            <td>${escaparHTML(i.nombre)}${i.promoAplicada?`<small class="cart-promo">Oferta aplicada: ${escaparHTML(i.promoAplicada)}</small>`:''}</td>
             <td>${i.varianteLabel}</td>
             <td class="num">${i.cantidad}</td>
-            <td class="num">${money(i.precioUnit)}</td>
+            <td class="num">${money(i.precioUnit)}${i.promoAplicada&&Number(i.precioUnit)!==Number(i.precioListaUnit)?`<small class="cart-promo-original">Antes ${money(i.precioListaUnit)}</small>`:''}</td>
             <td class="num">${money(i.cantidad*i.precioUnit)}</td>
             <td><button class="link-btn" onclick="quitarDelCarrito(${idx})">quitar</button></td>
           </tr>`).join('')}
