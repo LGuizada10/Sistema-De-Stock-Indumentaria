@@ -8,6 +8,7 @@ function defaultState(){
       pins: { admin:"1234", empleado:"0000" }
     },
     productos: [],
+    promociones: [],
     ventas: [],
     turnos: [],
     compras: [],

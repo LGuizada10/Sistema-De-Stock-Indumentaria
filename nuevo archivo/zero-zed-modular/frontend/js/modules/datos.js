@@ -2,11 +2,15 @@
 async function exportarDatos(){
   try{await asegurarCatalogoCompleto();}
   catch(e){showToast(e.message||'No se pudo preparar la copia');return;}
+  let comprasRespaldo=[];
+  try{comprasRespaldo=await comprasParaRespaldo();}
+  catch(e){showToast(e.message||'No se pudo incluir el historial completo de compras');return;}
   state.config.ultimoRespaldo = todayStr();
   delete state.config.respaldoPospuestoHasta;
   registrarMovimiento('Copia de seguridad','Se descargó una copia de seguridad');
   save();
-  const contenido = JSON.stringify(state,null,2);
+  const respaldo={...state,compras:comprasRespaldo};
+  const contenido = JSON.stringify(respaldo,null,2);
   descargarArchivo('zero-zed-backup-'+todayStr()+'.json', contenido, 'application/json');
 }
 async function exportarStockExcel(){
@@ -122,7 +126,7 @@ function importarDatos(event){
   const file = event.target.files[0];
   if(!file) return;
   const reader = new FileReader();
-  reader.onload = () => {
+  reader.onload = async () => {
     try{
       const data = JSON.parse(reader.result);
       if(!data.productos || !data.ventas) throw new Error('formato inválido');
@@ -136,14 +140,23 @@ function importarDatos(event){
       }
       if(!data.etiquetasPendientes || typeof data.etiquetasPendientes!=='object') data.etiquetasPendientes = {};
       if(!Array.isArray(data.movimientos)) data.movimientos = [];
+      if(!Array.isArray(data.promociones)) data.promociones = [];
+      const comprasRespaldo=Array.isArray(data.compras)?data.compras:[];
       state = data;
+      state.compras=[];
       marcarCatalogoCompletoSucio();
+      await sincronizar();
+      if(estadoSync==='error') throw new Error('No se pudieron guardar los datos del respaldo antes de restaurar las compras');
+      await reemplazarComprasDesdeRespaldo(comprasRespaldo);
       registrarMovimiento('Copia importada','Se restauraron los datos desde un archivo de copia');
-      save();
+      await sincronizar();
+      if(estadoSync==='error') throw new Error('La copia se importó parcialmente; revisá la conexión antes de volver a intentarlo');
+      await cargarComprasDesdeSupabase(0);
       showToast('Datos importados');
       renderAll();
     }catch(e){
-      showToast('El archivo no es una copia válida');
+      console.error(e);
+      showToast(e.message||'El archivo no es una copia válida');
     }
   };
   reader.readAsText(file);
@@ -156,7 +169,7 @@ async function borrarTodo(){
     await sincronizar();
     // Facturas y ventas no se sincronizan solas: se borran directo en la nube
     // (al borrar las ventas se van también sus ítems, costos y pagos).
-    for(const t of ['solicitudes_factura','ventas']){
+    for(const t of ['solicitudes_factura','ventas','compras']){
       const {error} = await sb.from(t).delete().neq('id','');
       if(error) throw error;
     }

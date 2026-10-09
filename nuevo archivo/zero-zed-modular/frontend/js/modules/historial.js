@@ -1,11 +1,28 @@
 // [ZZ] modules/historial.js — Pestaña HISTORIAL: ventas por día, exportar.
 /* =================== HISTORIAL =================== */
 let historialFecha = todayStr();
+let comprasDiaCache=new Map(), comprasDiaCargando='', comprasDiaError='', comprasDiaSecuencia=0;
+
+function asegurarComprasDelHistorial(fecha){
+  if(session!=='admin'||comprasDiaCache.has(fecha)||comprasDiaCargando===fecha)return;
+  const ticket=++comprasDiaSecuencia;comprasDiaCargando=fecha;comprasDiaError='';
+  consultarComprasPorFecha(fecha).then(compras=>{
+    comprasDiaCache.set(fecha,compras);
+    if(comprasDiaCargando===fecha)comprasDiaCargando='';
+    if(currentTab==='historial'&&historialFecha===fecha)renderAll();
+  }).catch(e=>{
+    if(ticket!==comprasDiaSecuencia)return;
+    comprasDiaError=e.message||String(e);comprasDiaCargando='';
+    if(currentTab==='historial'&&historialFecha===fecha)renderAll();
+  });
+}
 
 function renderHistorial(){
   const ventas = ventasDe(historialFecha);
   const devoluciones = state.devoluciones.filter(d=>d.fecha===historialFecha);
-  const comprasReventa = state.compras.filter(c=>c.fecha===historialFecha);
+  asegurarComprasDelHistorial(historialFecha);
+  const comprasReventa = comprasDiaCache.get(historialFecha)||[];
+  const comprasDiaPendiente=session==='admin'&&comprasDiaCargando===historialFecha;
   const turnosDia = state.turnos.filter(t=>t.fecha===historialFecha);
   const ajusteDevoluciones = devoluciones.reduce((total,d)=>total+ajusteEconomicoDevolucion(d),0);
   const totalVendidoNeto = ventas.reduce((total,v)=>total+Number(v.total||0),0)+ajusteDevoluciones;
@@ -68,7 +85,7 @@ function renderHistorial(){
             <button class="link-btn" style="color:var(--mustard);" onclick="verComprobante('${v.id}')">comprobante</button>
           </span>
         </div>
-        <div class="muted">${v.items.map(i=>i.cantidad+'x '+i.nombre+(i.varianteLabel?(' ('+i.varianteLabel+')'):'')).join(', ')}</div>
+        <div class="muted">${v.items.map(i=>i.cantidad+'x '+i.nombre+(i.varianteLabel?(' ('+i.varianteLabel+')'):'')+(i.promo?' · '+i.promo:'')).join(', ')}</div>
       </div>
     `).join('')}
   </div>
@@ -98,7 +115,7 @@ function renderHistorial(){
   ${session === 'admin' ? `
   <div class="card">
     <div class="card-title">Compras para reventa del día</div>
-    ${comprasReventa.length===0 ? '<p class="empty">Sin compras para reventa registradas ese día.</p>' : `
+    ${comprasDiaPendiente?'<p class="empty">Consultando compras de esta fecha…</p>':comprasDiaError&&!comprasDiaCache.has(historialFecha)?`<p class="empty">No se pudieron cargar las compras: ${escaparHTML(comprasDiaError)}</p>`:comprasReventa.length===0 ? '<p class="empty">Sin compras para reventa registradas ese día.</p>' : `
     ${comprasReventa.slice().reverse().map(c=>{
       const lineas = c.lineas && c.lineas.length ? c.lineas : [];
       return `<div style="padding:8px 0;border-bottom:1px dashed var(--line-soft);font-size:13.5px;">
@@ -150,7 +167,9 @@ async function exportarVentasDia(){
 
   const gastos = [];
   turnosDia.forEach(t=>(t.gastos||[]).forEach(g=>gastos.push({Fecha:fecha, Turno:t.turno, Hora:g.hora, Descripcion:g.desc, Monto:g.monto})));
-  const comprasReventa = state.compras.filter(c=>c.fecha===fecha);
+  let comprasReventa=[];
+  try{comprasReventa=await consultarComprasPorFecha(fecha);}
+  catch(e){showToast('No se pudieron incluir las compras del día en el Excel: '+(e.message||e));return;}
   const filasCompras = [];
   comprasReventa.forEach(c=>{
     const lineas = c.lineas && c.lineas.length ? c.lineas : [{nombre:c.descripcion, varianteLabel:'', cantidad:''}];

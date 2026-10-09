@@ -17,7 +17,7 @@ function filasComprobante(v){
       <td colspan="2">${i.cantidad}x ${i.nombre}${i.varianteLabel?(' ('+i.varianteLabel+')'):''}</td>
     </tr>
     <tr>
-      <td style="color:#5B6660;">&nbsp;&nbsp;${money(i.precioUnit)} c/u</td>
+      <td style="color:#5B6660;">&nbsp;&nbsp;${money(i.precioUnit)} c/u${i.promo?`<br>&nbsp;&nbsp;Oferta: ${escaparHTML(i.promo)}`:''}</td>
       <td style="text-align:right;">${money(i.cantidad*i.precioUnit)}</td>
     </tr>
   `).join('');

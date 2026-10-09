@@ -1,0 +1,24 @@
+.promo-form{display:grid;gap:14px}
+.promo-categorias{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0}
+.promo-categorias label{display:flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:999px;padding:7px 11px;background:var(--surface-2,#171a1e);cursor:pointer}
+.promo-categorias input{width:auto;margin:0;accent-color:var(--mustard)}
+.promo-niveles{display:grid;gap:8px;margin:7px 0}
+.promo-nivel{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.promo-nivel input{width:100px;min-width:80px}
+.promo-nivel input[aria-label="Precio total promocional"]{width:145px}
+.promo-productos-scroll{display:grid;gap:6px;max-height:310px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:8px;margin:8px 0}
+.promo-producto{display:flex;align-items:flex-start;gap:9px;border-bottom:1px solid var(--line-soft);padding:7px 4px;cursor:pointer}
+.promo-producto:last-child{border-bottom:0}
+.promo-producto input{width:auto;margin:3px 0 0;accent-color:var(--mustard)}
+.promo-producto span,.promo-producto small{display:block}
+.promo-producto small{color:var(--ink-soft);margin-top:3px}
+.promo-list{display:grid;gap:8px}
+.promo-item{display:flex;justify-content:space-between;align-items:center;gap:12px;border-top:1px solid var(--line);padding:12px 0}
+.promo-item:first-child{border-top:0}
+.promo-item .muted,.promo-item small{display:block;margin-top:4px}
+.promo-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.cart-promo{display:block;color:var(--mustard);font-size:11px;margin-top:3px}
+.promo-aviso{display:grid;gap:8px;border-color:color-mix(in srgb,var(--mustard) 45%,var(--line))}
+.promo-aviso>div{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.promo-aviso small{color:var(--ink-soft)}
+@media(max-width:600px){.promo-item{align-items:flex-start;flex-direction:column}.promo-actions{justify-content:flex-start}.promo-nivel{gap:6px}.promo-nivel input[aria-label="Precio total promocional"]{width:110px}}

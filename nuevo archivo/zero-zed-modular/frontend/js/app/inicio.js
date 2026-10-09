@@ -12,7 +12,7 @@ async function refrescar(){
   const a = document.activeElement;
   if(!session || document.hidden || printVentaId || nubeCargando || ventaEnCurso || (a && ['INPUT','SELECT','TEXTAREA'].includes(a.tagName))) return;
   if(historialDesde && currentTab!=='historial' && currentTab!=='devoluciones') historialDesde = null;   /* volver a la carga liviana */
-  try{ await sincronizar(); await cargarTodo(); renderAll(); if(currentTab==='stock'){ultimaConsultaStockNube='';refrescarResultadosStockNube();} else if(currentTab==='vender'&&ventaSearch.trim()) buscarProductosVenta(); }catch(e){ console.error(e); }
+  try{ await sincronizar(); await cargarTodo(); renderAll(); if(currentTab==='stock'){ultimaConsultaStockNube='';refrescarResultadosStockNube();} else if(currentTab==='vender'&&ventaSearch.trim()) buscarProductosVenta(); else if(currentTab==='compras'&&session==='admin') cargarComprasDesdeSupabase(comprasPaginaActual); }catch(e){ console.error(e); }
 }
 document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) refrescar(); });
 setInterval(refrescar, 60000);

@@ -6,6 +6,8 @@
 
 Define y actualiza tablas, permisos, funciones, políticas y auditoría. Es el archivo base del sistema. Ejecutarlo actualiza la estructura; no lo uses para importar una copia JSON ni para vaciar la base.
 
+Para actualizar únicamente el historial de compras en un proyecto que ya tiene la estructura instalada, ejecutá `ACTUALIZAR_COMPRAS.sql`. Agrega una búsqueda del lado de Supabase, paginación e índices; no borra ni modifica las compras existentes.
+
 ## 2. Migración de una copia local (privada)
 
 El generador `../migracion/generar_migracion.py` produce SQL con los datos del respaldo que se le indique. El resultado puede incluir ventas, costos, movimientos y otros datos privados; se excluye del repositorio mediante `.gitignore`. No lo publiques ni lo ejecutes en otro proyecto. Revisá el destino y el contenido antes de ejecutar cualquier migración.

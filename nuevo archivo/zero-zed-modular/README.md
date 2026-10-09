@@ -9,6 +9,8 @@
 > - el **aviso sin conexión**,
 > - el botón **"borrar todo"**.
 >
+> El módulo **Promociones** está disponible para el administrador. Se crean ofertas por categoría completa o por prendas seleccionadas, con varios precios por cantidad y fechas opcionales; las ventas aplican el precio promocional automáticamente.
+>
 > El SQL (`backend/zero-zed-supabase-completo.sql`) ya soporta varias de ellas. Se pueden aplicar sobre esta estructura modular y es más fácil, porque cada una cae en un solo archivo (login → `data/auth.js` y `modules/login.js`; WhatsApp → `modules/facturas.js`; stock → `modules/stock.js` y `data/supabase.js`; aviso sin conexión → `ui/cabecera.js`; borrar todo → `modules/datos.js` y `modules/ajustes.js`).
 >
 > **2. Rediseño pendiente.** El rediseño de la interfaz y el "mostrar más" de **Devoluciones** e **Historial** (que hoy se ve al costado y queda feo) quedan para cuando lo indiques.
@@ -29,9 +31,14 @@ No cambió ninguna función: solo se movió el código de lugar.
 
 El repositorio está organizado dentro de `nuevo archivo/zero-zed-modular`. Al preparar los cambios, revisá el estado de Git y confirmá que los archivos ignorados no estén ya versionados antes de crear un commit.
 
-## Cómo abrirlo
-Abrí `index.html` en el navegador (doble clic). Tiene que estar toda la carpeta junta.
-Para subirlo a internet (Netlify, GitHub Pages, etc.) subí la carpeta completa.
+## Cómo abrirlo en Windows
+
+1. Copiá o descargá **la carpeta completa** `zero-zed-modular` en la computadora nueva y extraela si llegó comprimida.
+2. Hacé doble clic en `Abrir Zero Zed.bat` (o directamente en `index.html`).
+
+No hace falta ejecutar `descargar-librerias.bat` en cada computadora: las librerías ya están incluidas en `frontend/vendor/`. Ese descargador queda solo como reparación si faltara alguno de esos archivos. La aplicación sí necesita internet para iniciar sesión y sincronizar con Supabase.
+
+Para subirla a internet (Netlify, GitHub Pages, etc.) subí la carpeta completa.
 
 ## Estructura
 ```
@@ -66,6 +73,7 @@ zero-zed/
 | Historial y exportar ventas del día | `modules/historial.js` |
 | Facturas / WhatsApp al contador | `modules/facturas.js` |
 | Compras | `modules/compras.js` |
+| Promociones y liquidaciones | `modules/promociones.js`, cálculo de precios al vender y tabla `promociones` en Supabase |
 | Ajustes, categorías, registro de movimientos | `modules/ajustes.js` |
 | Copia de seguridad, Excel, borrar todo | `modules/datos.js` |
 | Recibo / comprobante | `modules/comprobante.js` |

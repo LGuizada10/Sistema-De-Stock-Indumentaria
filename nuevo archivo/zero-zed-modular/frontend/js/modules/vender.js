@@ -25,7 +25,7 @@ function calcularPagoVenta(subtotal){
   const recargo = pagos.reduce((t,x)=>t+x.monto-x.base,0);
   return {ok:!error && subtotal>0, error, dividido:true, pct:0, recargo, total:subtotal+recargo, pagos};
 }
-function subtotalCarrito(){ return cart.reduce((a,i)=>a+i.cantidad*i.precioUnit,0); }
+function subtotalCarrito(){ recalcularPreciosPromoCarrito(); return Math.round(cart.reduce((a,i)=>a+i.cantidad*i.precioUnit,0)); }
 function renderResumenPago(){
   const subtotal = subtotalCarrito();
   const r = calcularPagoVenta(subtotal);
@@ -77,7 +77,7 @@ function renderVender(){
   const variantes = prodSel ? prodSel.variantes : [];
   const varSel = prodSel ? variantes.find(v=>v.id===ventaSelVar) : null;
 
-  const subtotal = cart.reduce((a,i)=>a+i.cantidad*i.precioUnit,0);
+  const subtotal = subtotalCarrito();
   const pct = ventaMetodo==='Débito' ? state.config.debitoPct : ventaMetodo==='Crédito' ? state.config.creditoPct : 0;
   const recargo = Math.round(subtotal*pct/100);
   const total = subtotal + recargo;
@@ -85,6 +85,7 @@ function renderVender(){
   return `
   <h2 class="section-title">Vender</h2>
   <p class="section-note">Turno ${t.turno} en curso · agregá productos a la venta y elegí cómo paga.</p>
+  ${renderPromocionesVigentes()}
   ${Date.now()<ventaConfirmadaHasta?`<div class="checkout-success" role="status"><span class="checkout-check" aria-hidden="true">✓</span>Venta registrada · ${money(ventaConfirmadaTotal)}</div>`:''}
   ${ultimaVentaId ? `
   <div class="card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
@@ -113,7 +114,7 @@ function renderVender(){
       <tbody>
         ${cart.map((i,idx)=>`
           <tr class="${i.varianteId===window.__nuevaLinea?'fila-nueva':''}">
-            <td>${i.nombre}</td>
+            <td>${escaparHTML(i.nombre)}${i.promoAplicada?`<small class="cart-promo">${escaparHTML(i.promoAplicada)}</small>`:''}</td>
             <td>${i.varianteLabel}</td>
             <td class="num">${i.cantidad}</td>
             <td class="num">${money(i.precioUnit)}</td>
@@ -178,10 +179,10 @@ function agregarAlCarrito(){
   const linea = {
     productoId:p.id, nombre:p.nombre + (p.descripcion?(' ('+p.descripcion+')'):''), categoria:p.categoria,
     varianteId:v.id, codigo:v.codigo||'', talle:v.talle||'', color:v.color||'', varianteLabel:[v.talle,v.color].filter(x=>x&&x!=='-').join(' / ')||'Único',
-    cantidad:qty, precioUnit:p.precio, costoUnit:Number(p.costo)||0
+    cantidad:qty, precioUnit:p.precio, precioListaUnit:p.precio, costoUnit:Number(p.costo)||0
   };
   window.__nuevaLinea = v.id;
-  const ex = cart.find(i=>i.varianteId===v.id && i.precioUnit===linea.precioUnit);
+  const ex = cart.find(i=>i.varianteId===v.id && Number(i.precioListaUnit??i.precioUnit)===linea.precioListaUnit);
   if(ex) ex.cantidad += qty; else cart.push(linea);
   if(navigator.vibrate && window.matchMedia('(pointer: coarse)').matches && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) navigator.vibrate(12);
   ventaSelQty = 1;

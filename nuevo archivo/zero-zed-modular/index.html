@@ -27,6 +27,8 @@
 <link rel="stylesheet" href="frontend/css/12-accesibilidad.css">
 <link rel="stylesheet" href="frontend/css/13-stock.css">
 <link rel="stylesheet" href="frontend/css/13-rediseno.css">
+<link rel="stylesheet" href="frontend/css/14-promociones.css">
+<link rel="stylesheet" href="frontend/css/15-compras.css">
 </head>
 <body>
 <a class="skip-link" href="#content">Saltar al contenido</a>
@@ -76,10 +78,11 @@
 
 <!-- Datos del negocio (se completan en legal/datos-negocio.js) -->
 <script src="legal/datos-negocio.js"></script>
-<!-- Librerías externas -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<!-- Librerías incluidas en la carpeta para abrir la app sin descargarlas en cada computadora -->
+<script src="frontend/vendor/xlsx.full.min.js"></script>
+<script src="frontend/vendor/jspdf.umd.min.js"></script>
+<script src="frontend/vendor/supabase.min.js"></script>
+<script src="frontend/js/core/vendor-check.js"></script>
 <!-- Código de la app (el orden importa) -->
 <script src="frontend/js/core/logo.js"></script>
 <script src="frontend/js/core/config.js"></script>
@@ -98,6 +101,7 @@
 <script src="frontend/js/modules/comprobante.js"></script>
 <script src="frontend/js/modules/login.js"></script>
 <script src="frontend/js/modules/vender.js"></script>
+<script src="frontend/js/modules/promociones.js"></script>
 <script src="frontend/js/modules/facturas.js"></script>
 <script src="frontend/js/modules/stock.js"></script>
 <script src="frontend/js/modules/etiquetas.js"></script>

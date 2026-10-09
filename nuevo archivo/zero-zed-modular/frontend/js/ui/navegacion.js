@@ -10,6 +10,7 @@ const ALL_TABS = [
   {id:'historial', label:'Historial', roles:['admin','empleado']},
   {id:'facturas', label:'Facturas', roles:['admin']},
   {id:'compras', label:'Compras', roles:['admin']},
+  {id:'promociones', label:'Promociones', roles:['admin']},
   {id:'ajustes', label:'Ajustes', roles:['admin']}
 ];
 function tabsPermitidas(){ return ALL_TABS.filter(t=>t.roles.includes(session)); }

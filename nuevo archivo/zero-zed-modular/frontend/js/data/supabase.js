@@ -9,7 +9,7 @@ const H = x => x ? String(x).slice(0,5) : '';
 const suf = id => parseInt(String(id).split(/-[gl]/).pop())||0;
 const ordFH = (a,b) => (a.fecha+(a.hora||'')).localeCompare(b.fecha+(b.hora||''));
 const ordCreado = (a,b) => String(a.creado_en).localeCompare(String(b.creado_en));
-const ORDEN = ['productos','productos_costos','variantes','turnos','turno_gastos','devoluciones','devolucion_lineas','compras','compra_lineas'];
+const ORDEN = ['productos','productos_costos','variantes','promociones','turnos','turno_gastos','devoluciones','devolucion_lineas'];
 const PK = {productos_costos:'producto_id'};
 const pk = t => PK[t]||'id';
 let snap = {mov:new Set(), cfg:null}, cola = Promise.resolve();
@@ -169,6 +169,41 @@ async function consultarCatalogo(termino='', categoria='', offset=0, limite=30){
   mezclarCatalogoEnEstado(productos);
   return {productos:productos.filter(p=>!BORRADO_CATALOGO.productos.has(p.id)).map(p=>productoPorId(p.id)||p),total:Number(data?.total)||0};
 }
+async function consultarComprasNube(termino='',offset=0,limite=20,fecha=null){
+  const {data,error}=await sb.rpc('buscar_compras',{p_termino:termino||'',p_limite:limite,p_offset:offset,p_fecha:fecha||null});
+  if(error) throw new Error('No se pudo buscar el historial de compras. Ejecutá backend/ACTUALIZAR_COMPRAS.sql en Supabase: '+error.message);
+  const filas=(data?.items||[]).map(c=>({
+    id:c.id,fecha:c.fecha,descripcion:c.descripcion||'',lugar:c.lugar||'',proveedor:c.proveedor||'',direccion:c.direccion||'',telefono:c.telefono||'',costo:N(c.costo),notas:c.notas||'',creadoEn:c.creado_en,
+    lineas:(c.lineas||[]).map(l=>({id:l.id,productoId:l.producto_id,varianteId:l.variante_id,nombre:l.nombre||'',varianteLabel:l.variante_label||'',cantidad:N(l.cantidad)||1}))
+  }));
+  return {compras:filas,total:Number(data?.total)||0};
+}
+async function consultarComprasPorFecha(fecha){
+  const compras=[],limite=50;
+  for(let offset=0;;offset+=limite){
+    const pagina=await consultarComprasNube('',offset,limite,fecha);
+    compras.push(...pagina.compras);
+    if(compras.length>=pagina.total||pagina.compras.length<limite)return compras;
+  }
+}
+async function comprasParaRespaldo(){
+  const [compras,lineas]=await Promise.all([traer('compras','fecha'),traer('compra_lineas','id')]);
+  const porCompra={};
+  lineas.forEach(l=>{(porCompra[l.compra_id]||(porCompra[l.compra_id]=[])).push({id:l.id,productoId:l.producto_id,varianteId:l.variante_id,nombre:l.nombre||'',varianteLabel:l.variante_label||'',cantidad:N(l.cantidad)||1});});
+  return compras.map(c=>({id:c.id,fecha:c.fecha,descripcion:c.descripcion||'',lugar:c.lugar||'',proveedor:c.proveedor||'',direccion:c.direccion||'',telefono:c.telefono||'',costo:N(c.costo),notas:c.notas||'',lineas:porCompra[c.id]||[]}));
+}
+async function reemplazarComprasDesdeRespaldo(compras){
+  const actuales=await traer('compras','id');
+  for(let i=0;i<actuales.length;i+=200){const {error}=await sb.from('compras').delete().in('id',actuales.slice(i,i+200).map(c=>c.id));if(error)throw error;}
+  const cabeceras=(compras||[]).map(c=>({id:c.id||uid(),fecha:c.fecha||todayStr(),descripcion:c.descripcion||'',lugar:c.lugar||'',proveedor:c.proveedor||'',direccion:c.direccion||'',telefono:c.telefono||'',costo:N(c.costo),notas:c.notas||''}));
+  for(let i=0;i<cabeceras.length;i+=500){const {error}=await sb.from('compras').insert(cabeceras.slice(i,i+500));if(error)throw error;}
+  const lineas=(compras||[]).flatMap((c,ci)=>{
+    // Respaldos antiguos guardaban una sola prenda directamente en la compra.
+    const origen=Array.isArray(c.lineas)&&c.lineas.length?c.lineas:(c.productoId?[{productoId:c.productoId,varianteId:c.varianteId,nombre:c.nombre||c.descripcion||'',varianteLabel:c.varianteLabel||'',cantidad:c.cantidad}]:[]);
+    return origen.map((l,li)=>({id:l.id||((c.id||cabeceras[ci].id)+'-l'+li),compra_id:c.id||cabeceras[ci].id,producto_id:T(l.productoId),variante_id:T(l.varianteId),nombre:l.nombre||'',variante_label:l.varianteLabel||'',cantidad:Math.max(1,Math.floor(N(l.cantidad)||1))}));
+  });
+  for(let i=0;i<lineas.length;i+=500){const {error}=await sb.from('compra_lineas').insert(lineas.slice(i,i+500));if(error)throw error;}
+}
 async function consultarResumenCatalogo(){
   if(resumenCatalogoCache && Date.now()-resumenCatalogoCacheAt<45000) return resumenCatalogoCache;
   const {data,error}=await sb.rpc('resumen_catalogo');
@@ -206,13 +241,10 @@ function filasNube(opciones){
     r.variantes = P.flatMap(p=>p.variantes.map(v=>filaVariante(p,v)));
   }
   r.turnos = state.turnos.map(t=>({id:t.id, fecha:t.fecha, turno:t.turno||'', cambio_inicial:N(t.cambioInicial), cambio_final:t.cambioFinal==null?null:N(t.cambioFinal), efectivo_esperado:t.efectivoEsperado==null?null:N(t.efectivoEsperado), abierto:!!t.abierto, hora_apertura:T(t.horaApertura), hora_cierre:T(t.horaCierre)}));
+  if(adm) r.promociones = (state.promociones||[]).map(p=>({id:p.id,nombre:p.nombre,activa:p.activa!==false,productos_ids:p.productos_ids||[],categorias:p.categorias||[],niveles:p.niveles||[],fecha_desde:T(p.fecha_desde),fecha_hasta:T(p.fecha_hasta),creado_en:p.creado_en||new Date().toISOString()}));
   r.turno_gastos = state.turnos.flatMap(t=>(t.gastos||[]).map((g,i)=>({id:t.id+'-g'+i, turno_id:t.id, tipo:'gasto', descripcion:g.desc||'', monto:N(g.monto), hora:T(g.hora)})));
   r.devoluciones = state.devoluciones.map(x=>({id:x.id, fecha:x.fecha, hora:T(x.hora), venta_id:T(x.ventaId), venta_fecha:T(x.ventaFecha), item_idx:x.itemIdx==null?null:N(x.itemIdx), producto_id:T(x.productoId), variante_id:T(x.varianteId), nombre:x.nombre||'', variante_label:x.varianteLabel||'', codigo:x.codigo||'', cantidad:N(x.cantidad)||1, monto_devuelto:N(x.montoDevuelto), tipo:x.tipo||'devolucion', monto_nuevo:N(x.montoNuevo), monto_diferencia:N(x.montoDiferencia), motivo:x.motivo||'', reintegro:x.reintegro||'', metodo_diferencia:x.metodoDiferencia||'', turno_id:T(x.turnoId)}));
   r.devolucion_lineas = state.devoluciones.flatMap(x=>(x.productosNuevos||[]).map((l,i)=>({id:x.id+'-l'+i, devolucion_id:x.id, orden:i, producto_id:T(l.productoId), variante_id:T(l.varianteId), nombre:l.nombre||'', variante_label:l.varianteLabel||'', codigo:l.codigo||'', cantidad:N(l.cantidad)||1, precio_unit:N(l.precioUnit)})));
-  if(adm){
-    r.compras = state.compras.map(c=>({id:c.id, fecha:c.fecha, descripcion:c.descripcion||'', lugar:c.lugar||'', proveedor:c.proveedor||'', direccion:c.direccion||'', telefono:c.telefono||'', costo:N(c.costo), notas:c.notas||''}));
-    r.compra_lineas = state.compras.flatMap(c=>(c.lineas||[]).map((l,i)=>({id:c.id+'-l'+i, compra_id:c.id, producto_id:T(l.productoId), variante_id:T(l.varianteId), nombre:l.nombre||'', variante_label:l.varianteLabel||'', cantidad:N(l.cantidad)||1})));
-  }
   return r;
 }
 function snapDe(now, mov, cfg){
@@ -319,7 +351,7 @@ async function actualizarEstadoTrasVenta(ventaId, variantesAfectadas){
   const costosR=session==='admin'&&itemIds.length ? await sb.from('venta_items_costos').select('item_id,costo_unit').in('item_id',itemIds) : {data:[],error:null};
   if(costosR.error) throw costosR.error;
   const v=ventaR.data, costoPorItem=Object.fromEntries((costosR.data||[]).map(x=>[x.item_id,N(x.costo_unit)]));
-  const items=(itemsR.data||[]).map(x=>({productoId:x.producto_id,nombre:x.nombre,categoria:x.categoria,varianteId:x.variante_id,codigo:x.codigo,talle:x.talle,color:x.color,varianteLabel:x.variante_label,cantidad:x.cantidad,precioUnit:N(x.precio_unit),costoUnit:costoPorItem[x.id]||0}));
+  const items=(itemsR.data||[]).map(x=>({productoId:x.producto_id,nombre:x.nombre,categoria:x.categoria,varianteId:x.variante_id,codigo:x.codigo,talle:x.talle,color:x.color,varianteLabel:x.variante_label,cantidad:x.cantidad,precioUnit:N(x.precio_unit),precioListaUnit:N(x.precio_lista),promo:x.promo||'',costoUnit:costoPorItem[x.id]||0}));
   const pagos=(pagosR.data||[]).map(x=>({metodo:x.metodo,monto:N(x.monto)}));
   const nueva={id:v.id,fecha:v.fecha,hora:H(v.hora),turnoId:v.turno_id,items,metodoPago:v.metodo_pago,pagos,subtotal:N(v.subtotal),recargoPct:N(v.recargo_pct),total:N(v.total)};
   state.ventas=state.ventas.filter(x=>x.id!==ventaId); state.ventas.push(nueva);
@@ -335,29 +367,29 @@ async function actualizarEstadoTrasVenta(ventaId, variantesAfectadas){
 
 async function cargarTodo(){
   const adm=session==='admin', vacio=Promise.resolve([]), dh=desdeHistorial(), productosCargados=state.productos||[];
-  const [cfg,tu,ga,ve,it,ic,pg,dv,dl,cp,cl,mv] = await Promise.all([
+  const [cfg,pr,tu,ga,ve,it,ic,pg,dv,dl,mv] = await Promise.all([
     traer('config'),
+    traer('promociones'),
     traer('turnos'), traer('turno_gastos'), traerDesde('ventas',dh),
     traerDesde('venta_items',dh,'id','*, ventas!inner(fecha)','ventas.fecha'),
     adm?traerDesde('venta_items_costos',dh,'item_id','*, venta_items!inner(ventas!inner(fecha))','venta_items.ventas.fecha'):vacio,
     traerDesde('venta_pagos',dh,'id','*, ventas!inner(fecha)','ventas.fecha'),
     traerDesde('devoluciones',dh),
     traerDesde('devolucion_lineas',dh,'id','*, devoluciones!inner(fecha)','devoluciones.fecha'),
-    adm?traer('compras'):vacio, adm?traer('compra_lineas'):vacio, adm?traerDesde('movimientos',dh):vacio]);
+    adm?traerDesde('movimientos',dh):vacio]);
   const s=defaultState(), c=cfg[0]||{}, agr=(o,k,v)=>(o[k]=o[k]||[]).push(v);
   s.productos=productosCargados;
+  s.promociones=pr||[];
   s.config={...s.config, nombreLocal:c.nombre_local||'Zero Zed', debitoPct:N(c.debito_pct), creditoPct:N(c.credito_pct), categorias:c.categorias||[], pins:{admin:'',empleado:''}, ultimoRespaldo:todayStr(), respaldoPospuestoHasta:'2999-12-31'};
   for(const p of s.productos) for(const v of p.variantes||[]) if(v.etiquetas_pendientes>0) s.etiquetasPendientes[v.id]=v.etiquetas_pendientes;
   const gm={}; ga.forEach(g=>agr(gm,g.turno_id,g));
   s.turnos=tu.sort(ordCreado).map(t=>({id:t.id, fecha:t.fecha, turno:t.turno, cambioInicial:N(t.cambio_inicial), cambioFinal:t.cambio_final==null?null:N(t.cambio_final), efectivoEsperado:t.efectivo_esperado==null?null:N(t.efectivo_esperado), abierto:t.abierto, horaApertura:H(t.hora_apertura), horaCierre:H(t.hora_cierre)||null, gastos:(gm[t.id]||[]).sort((a,b)=>suf(a.id)-suf(b.id)).map(g=>({desc:g.descripcion, monto:N(g.monto), hora:H(g.hora)}))}));
   const cim=Object.fromEntries(ic.map(x=>[x.item_id,N(x.costo_unit)])), im={}, pgm={};
-  it.sort((a,b)=>a.idx-b.idx).forEach(x=>agr(im,x.venta_id,{productoId:x.producto_id, nombre:x.nombre, categoria:x.categoria, varianteId:x.variante_id, codigo:x.codigo, talle:x.talle, color:x.color, varianteLabel:x.variante_label, cantidad:x.cantidad, precioUnit:N(x.precio_unit), costoUnit:cim[x.id]||0}));
+  it.sort((a,b)=>a.idx-b.idx).forEach(x=>agr(im,x.venta_id,{productoId:x.producto_id, nombre:x.nombre, categoria:x.categoria, varianteId:x.variante_id, codigo:x.codigo, talle:x.talle, color:x.color, varianteLabel:x.variante_label, cantidad:x.cantidad, precioUnit:N(x.precio_unit), precioListaUnit:N(x.precio_lista), promo:x.promo||'', costoUnit:cim[x.id]||0}));
   pg.forEach(x=>agr(pgm,x.venta_id,{metodo:x.metodo, monto:N(x.monto)}));
   s.ventas=ve.sort(ordFH).map(v=>({id:v.id, fecha:v.fecha, hora:H(v.hora), turnoId:v.turno_id, items:im[v.id]||[], metodoPago:v.metodo_pago, pagos:pgm[v.id]||[], subtotal:N(v.subtotal), recargoPct:N(v.recargo_pct), total:N(v.total)}));
   const dlm={}; dl.sort((a,b)=>a.orden-b.orden).forEach(x=>agr(dlm,x.devolucion_id,{productoId:x.producto_id, varianteId:x.variante_id, nombre:x.nombre, varianteLabel:x.variante_label, codigo:x.codigo, cantidad:x.cantidad, precioUnit:N(x.precio_unit), etiquetasPendientesRestadas:0}));
   s.devoluciones=dv.sort(ordFH).map(x=>{ const L=dlm[x.id]||[], f=L[0]||{}; return {id:x.id, fecha:x.fecha, hora:H(x.hora), ventaId:x.venta_id, productoId:x.producto_id, varianteId:x.variante_id, ventaFecha:x.venta_fecha||'', itemIdx:x.item_idx, nombre:x.nombre, varianteLabel:x.variante_label, codigo:x.codigo, cantidad:x.cantidad, montoDevuelto:N(x.monto_devuelto), tipo:x.tipo, montoNuevo:N(x.monto_nuevo), productosNuevos:L, productoNuevoId:f.productoId, varianteNuevaId:f.varianteId, nombreNuevo:f.nombre, varianteNuevaLabel:f.varianteLabel, codigoNuevo:f.codigo, montoDiferencia:N(x.monto_diferencia), motivo:x.motivo, reintegro:x.reintegro, metodoDiferencia:x.metodo_diferencia, turnoId:x.turno_id}; });
-  const clm={}; cl.sort((a,b)=>suf(a.id)-suf(b.id)).forEach(x=>agr(clm,x.compra_id,{productoId:x.producto_id, varianteId:x.variante_id, nombre:x.nombre, varianteLabel:x.variante_label, cantidad:x.cantidad}));
-  s.compras=cp.sort(ordFH).map(x=>({id:x.id, fecha:x.fecha, descripcion:x.descripcion, lugar:x.lugar, proveedor:x.proveedor, direccion:x.direccion, telefono:x.telefono, costo:N(x.costo), notas:x.notas, lineas:clm[x.id]||[]}));
   s.movimientos=mv.sort(ordFH).map(x=>({id:x.id, fecha:x.fecha, hora:H(x.hora), rol:x.rol, accion:x.accion, detalle:x.detalle}));
   s.etiquetasInicialesImpresas=true;
   state=s;

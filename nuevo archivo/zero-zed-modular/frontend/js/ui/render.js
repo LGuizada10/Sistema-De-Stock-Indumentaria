@@ -43,6 +43,7 @@ function renderAll(){
   else if(currentTab==='facturas') c.innerHTML = renderFacturas();
   else if(currentTab==='devoluciones') c.innerHTML = renderDevoluciones();
   else if(currentTab==='compras') c.innerHTML = renderCompras();
+  else if(currentTab==='promociones') c.innerHTML = renderPromociones();
   else if(currentTab==='ajustes') c.innerHTML = renderAjustes();
   if(session==='admin') c.innerHTML = renderAvisosAdmin() + c.innerHTML;
   if(ultimaVistaRenderizada!==vistaActual&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches){c.classList.remove('view-enter');void c.offsetWidth;c.classList.add('view-enter');}
